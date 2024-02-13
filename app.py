@@ -1,5 +1,8 @@
 # GNU nano 6.2                                                                                                        app.py                                                                                                                 from flask import Flask, request
 
+from datetime import datetime
+
+
 from flask import Flask, request  # this is for debugging on local server
 
 from flask_limiter import Limiter
@@ -12,7 +15,7 @@ import storage_data
 app = Flask(__name__)
 
 # "http://localhost:8080" only for testing in the cors
-cors = CORS(app, resources={r"/back_end/api/*": {"origins": ["https://conradswebsite.com"]}})
+cors = CORS(app, resources={r"/back_end/api/*": {"origins": ["https://conradswebsite.com","http://localhost:8080"]}})
 
 limiter = Limiter(
     app=app,
@@ -43,13 +46,24 @@ def leave_message():
     name = data.get('name')
     subject = data.get('subject')
     message = data.get('message')
-    message_dict = {"name": name,"subject": subject, "message": message}
+    
+    current_datetime = datetime.now()
+    date_string = current_datetime.strftime('%Y-%m-%d %H:%M:%S')
+    
+    message_dict = {"date": date_string, "name": name,"subject": subject, "message": message}
     with open('user_messages.json', 'a') as file:
         file.write(json.dumps(message_dict) + '\n')
     return jsonify({'message': 'Message received'}), 200
 
 
-
+@app.route('/back_end/api/cosine', methods=['POST'])
+@limiter.limit("1/10seconds")
+def get_cosine_similarity():
+    data = request.get_json()
+    s1 = data.get('sentence1')
+    s2 = data.get('sentence2')
+    result = cosine_similarity.compute_similarity(s1, s2)
+    return jsonify(result)  # Convert the dictionary to a JSON response
 
 
 # this is for debugging without frontend server
