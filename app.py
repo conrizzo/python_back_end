@@ -1,5 +1,3 @@
-from flask import Flask, request
-from datetime import datetime
 from datetime import datetime
 from flask import Flask, request, jsonify, send_file
 from flask_limiter import Limiter
@@ -9,8 +7,31 @@ import storage_data
 import cosine_similarity
 import json
 import bleach
+import redis
+from redis import Redis, RedisError
+
 
 app = Flask(__name__)
+#activate_redis = redis.Redis(host='localhost', port=6379, db=0)
+#storage = RedisStorage(activate_redis)
+'''
+def test_redis_connection():
+    try:
+        # Create a new Redis connection (replace with your settings if necessary)
+        r = Redis(host='localhost', port=6379, db=0)
+
+        # Perform a simple operation to check the connection
+        r.ping()
+
+        print("Successfully connected to Redis.")
+    except RedisError:
+        print("Failed to connect to Redis.")
+
+# Call the function to test the connection
+test_redis_connection()
+'''
+app.config['RATELIMIT_STORAGE_URL'] = 'redis://localhost:6379/0'
+
 cors = CORS(app, resources={r"/back_end/api/*": {"origins": [
             "https://conradswebsite.com", "https://project.conradswebsite.com"]}})
 
@@ -18,9 +39,11 @@ cors = CORS(app, resources={r"/back_end/api/*": {"origins": [
 limiter = Limiter(
     app=app,
     key_func=lambda: request.headers.get('X-Real-IP', request.remote_addr),
-    default_limits=["3 per 10 seconds"]
+    default_limits=["3 per 10 seconds"],
+    storage_uri="redis://localhost:6379",
+    storage_options={"socket_connect_timeout": 30},
+    strategy="fixed-window", # or "moving-window"
 )
-
 
 # Initialize the counter
 get_data_counter = int(storage_data.read_file())
@@ -44,15 +67,10 @@ def get_data():
 @limiter.limit("1/30seconds")
 def leave_message():
     data = request.get_json()
-    name = data.get('name')
-    subject = data.get('subject')
-    message = data.get('message')
-
+    name, subject, message = data.get('name'), data.get('subject'), data.get('message')  
     # Sanitize the inputs with bleach
-    name = bleach.clean(name)
-    subject = bleach.clean(subject)
-    message = bleach.clean(message)
-
+    name,subject,message = bleach.clean(name), bleach.clean(subject), bleach.clean(message)    
+    
     current_datetime = datetime.now()
     date_string = current_datetime.strftime('%Y-%m-%d %H:%M:%S')
 
@@ -60,6 +78,7 @@ def leave_message():
                     "subject": subject, "message": message}
     with open('user_messages.json', 'a') as file:
         file.write(json.dumps(message_dict) + '\n')
+        
     return jsonify({'message': 'Form submission successful'}), 200
 
 
@@ -80,11 +99,12 @@ def download_file():
     return send_file(path, as_attachment=True)
 
 ### This is for debugging without another frontend server
-### The host must be local for this work 
+### The host must be local for this work  
 #@app.route('/')
 #def home():
 #    return "Hello, World!"
 
+# This is only for development, Gunicorn runs this script automatically and we don't need a main to run the app
+#if __name__ == '__main__':
+#    app.run(host='0.0.0.0', port=5000)
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0')

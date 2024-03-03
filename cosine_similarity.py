@@ -1,3 +1,5 @@
+# stat
+
 from sentence_transformers import SentenceTransformer, util
 model = SentenceTransformer("multi-qa-mpnet-base-dot-v1")
 

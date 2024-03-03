@@ -2,8 +2,8 @@
 def write_file(number):
     #content = request.get_json()  # Get the request body as JSON
     with open('data.txt', 'w') as f:
-        # f.write(content['data'])
-        f.write(number)
+       # f.write(content['data'])
+         f.write(number)
     return 'Success', 200
 
 
