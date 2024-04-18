@@ -3,12 +3,18 @@ from flask import Flask, request, jsonify, send_file
 from flask_limiter import Limiter
 from flask_cors import CORS
 from flask_limiter.extension import RateLimitExceeded
+
 import storage_data
 import cosine_similarity
+import country_music_lyrics
+
 import json
 import bleach
 import redis
 from redis import Redis, RedisError
+
+import socket
+import os
 
 
 app = Flask(__name__)
@@ -30,17 +36,56 @@ def test_redis_connection():
 # Call the function to test the connection
 test_redis_connection()
 '''
+'''
 app.config['RATELIMIT_STORAGE_URL'] = 'redis://localhost:6379/0'
 
-cors = CORS(app, resources={r"/back_end/api/*": {"origins": [
+cors = CORS(app, resources={r"/backend/api/*": {"origins": [
             "https://conradswebsite.com", "https://project.conradswebsite.com"]}})
 
+# Connect to local Redis server
+r = redis.Redis(host='localhost', port=6379, db=0)
+'''
+
+'''
+redis_address = 'redis://localhost:6379/0'
+app.config['RATELIMIT_STORAGE_URL'] = redis_address
+
+cors = CORS(app, resources={r"/backend/api/*": {"origins": [
+            "https://conradswebsite.com", "https://project.conradswebsite.com"]}})
+
+# Connect to local Redis server
+# Connect to local Redis server
+r = redis.Redis(host='localhost', port=6379, db=0)
 
 limiter = Limiter(
     app=app,
     key_func=lambda: request.headers.get('X-Real-IP', request.remote_addr),
     default_limits=["3 per 10 seconds"],
-    storage_uri="redis://localhost:6379",
+    storage_uri=redis_address,
+    storage_options={"socket_connect_timeout": 30},
+    strategy="fixed-window", # or "moving-window"
+)
+
+
+
+ADD A KEY TO THE CONFIG ----------- not public
+'''
+redis_address = 'redis://some-redis:6379/0'
+app.config['RATELIMIT_STORAGE_URL'] = redis_address
+#app.config['SECRET_KEY'] = 'your-secret-key'
+# Add secret key sourced from environment variable
+cors = CORS(app, resources={r"/backend/api/*": {"origins": [
+            "https://conradswebsite.com", "https://project.conradswebsite.com"]}})
+
+# Connect to local Redis server
+# Connect to local Redis server
+r = redis.Redis(host='some-redis', port=6379, db=0)
+
+limiter = Limiter(
+    app=app,
+    key_func=lambda: request.headers.get('X-Real-IP', request.remote_addr),
+    default_limits=["3 per 10 seconds"],
+    storage_uri=redis_address,
     storage_options={"socket_connect_timeout": 30},
     strategy="fixed-window", # or "moving-window"
 )
@@ -54,16 +99,32 @@ def ratelimit_handler(e):
     return {'message': 'Rate limit exceeded, the limit is 3 queries per 10 seconds.'}, 429
 
 
-@app.route('/back_end/api/data')
+
+@app.route('/backend/api/data')
 @limiter.limit("3/10seconds")
 def get_data():
     global get_data_counter
     get_data_counter += 1
+    # Redis
+    counter = r.get('counter')
+    r.incr('counter')
+    with open('counter.txt', 'w') as f:
+        f.write(str(counter))	
     storage_data.write_file(str(get_data_counter))
     return {'message': f'The backend server says hello back! The number of queries is: {get_data_counter}'}
 
+@app.route('/backend/api/country_music_generator', methods=['POST'])
+@limiter.limit("3/10seconds")
+def country_music_lyric_data():
+    data = request.get_json()
+    front_end_country_music_labels = data.get('countryMusicLabels') 
+    #cleaned_sentences = [bleach.clean(front_end_country_music_label) for front_end_country_music_label in front_end_country_music_labels]
+    
+    return jsonify(results)  # Convert the list to a JSON response        
+    
 
-@app.route('/back_end/api/leave_message', methods=['POST'])
+
+@app.route('/backend/api/leave_message', methods=['POST'])
 @limiter.limit("1/30seconds")
 def leave_message():
     data = request.get_json()
@@ -82,7 +143,7 @@ def leave_message():
     return jsonify({'message': 'Form submission successful'}), 200
 
 
-@app.route('/back_end/api/cosine', methods=['POST'])
+@app.route('/backend/api/cosine', methods=['POST'])
 @limiter.limit("1/10seconds")
 def get_cosine_similarity():
     data = request.get_json()
@@ -92,7 +153,7 @@ def get_cosine_similarity():
     return jsonify(result)  # Convert the dictionary to a JSON response
 
 
-@app.route('/back_end/api/download')
+@app.route('/backend/api/download')
 @limiter.limit("1/30seconds")
 def download_file():
     path = "test100.txt"
