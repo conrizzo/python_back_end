@@ -6,7 +6,6 @@ from flask_cors import CORS
 from flask_limiter.extension import RateLimitExceeded
 
 
-
 import storage_data
 import cosine_similarity
 
@@ -27,9 +26,11 @@ import os
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
-# Session cookies
-from flask_jwt_extended import JWTManager, create_access_token
-
+# Session cookies and access tokens
+from flask_jwt_extended import (
+    JWTManager, jwt_required, create_access_token,
+    get_jwt_identity, create_refresh_token, get_jwt
+)
 
 app = Flask(__name__)
 # activate_redis = redis.Redis(host='localhost', port=6379, db=0)
@@ -94,10 +95,8 @@ or in the Docker compose file, multiple ways to do this!
 SECRET_KEY = os.getenv('FLASK_SECRET_KEY')
 POSTGRESQL_PASSWORD = os.getenv('POSTGRESQL_PASSWORD')
 JWT_KEY = os.getenv('JWT_KEY')
-
 # Initialize JWTManager - extends Flask app to have JWT capabilities
 jwt = JWTManager(app)
-
 # Check if the secret key was not found and raise an error
 if SECRET_KEY is None:
     raise ValueError(
@@ -134,7 +133,6 @@ limiter = Limiter(
 )
 
 
-
 # Initialize the counter
 get_data_counter = int(storage_data.read_file())
 
@@ -157,6 +155,7 @@ def get_data():
     storage_data.write_file(str(get_data_counter))
     return {'message': f'The backend server says hello back! The number of queries is: {get_data_counter}'}
 
+
 """
 @app.route('/backend/api/country_music_generator', methods=['POST'])
 @limiter.limit("3/10seconds")
@@ -167,6 +166,7 @@ def country_music_lyric_data():
 
     return jsonify(results)  # Convert the list to a JSON response
 """
+
 
 @app.route('/backend/api/leave_message', methods=['POST'])
 @limiter.limit("1/30seconds")
@@ -209,21 +209,21 @@ def download_file():
 bcrypt = Bcrypt(app)
 
 
-
-def get_db_connection(db_uri):    
+def get_db_connection(db_uri):
     """ 
         Connect to the database
         Parameters: db_uri (str): The URI of the database
         Returns: conn (psycopg2.extensions.connection): The connection object    
-    """    
+    """
     conn = psycopg2.connect(db_uri)
     return conn
+
 
 @app.route('/backend/api/register', methods=['POST'])
 def register():
     """
     Registers a user in the PostgreSQL database
-    
+
     """
     data = request.get_json()
     username = data['username']
@@ -237,7 +237,8 @@ def register():
     if cur.fetchone():
         cur.close()
         conn.close()
-        return jsonify({'error': 'Username already exists'}), 409  # 409 Conflict
+        # 409 Conflict
+        return jsonify({'error': 'Username already exists'}), 409
 
     hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
 
@@ -251,16 +252,16 @@ def register():
 
     return jsonify({'message': 'User created successfully'}), 201
 
+
 @app.route('/backend/api/login', methods=['POST'])
 def login():
     """
-    Lets user login to the PostgreSQL database
-    
+    Lets user login to the PostgreSQL database    
     """
     data = request.get_json()
     username = data['username']
     password = data['password']
-    
+
     conn = get_db_connection(app.config['POSTGRESQL_URI'])
     cur = conn.cursor(cursor_factory=RealDictCursor)
     cur.execute("SELECT * FROM users WHERE username = %s", (username,))
@@ -269,12 +270,79 @@ def login():
     conn.close()
 
     if user and bcrypt.check_password_hash(user['password_hash'], password):
-        # Login successful, generate JWT
+        # Login successful, generate JWT and refresh token
         access_token = create_access_token(identity=username)
-        return jsonify(access_token=access_token), 200
+        refresh_token = create_refresh_token(identity=username)
+        return jsonify(access_token=access_token, refresh_token=refresh_token), 200
     else:
         return jsonify({'message': 'Invalid username or password'}), 401
-    
+
+
+@app.route('/backend/api/account_data', methods=['GET'])
+@jwt_required()
+def get_account_data():
+    """
+    Fetches and returns the account data for the currently logged-in user.
+    """
+    # Get the username from the JWT
+    username = get_jwt_identity()
+
+    conn = get_db_connection(app.config['POSTGRESQL_URI'])
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    # Get the user's ID
+    cur.execute("SELECT user_id FROM users WHERE username = %s", (username,))
+    user_id = cur.fetchone()['user_id']
+
+    # Get the user's account data
+    cur.execute("SELECT data FROM account_data WHERE user_id = %s", (user_id,))
+    account_data = cur.fetchall()
+
+    cur.close()
+    conn.close()
+
+    return jsonify(account_data=account_data), 200
+
+
+@app.route('/backend/api/account_data', methods=['POST'])
+@jwt_required()
+def post_account_data():
+    """
+    Receives and saves the account data for the currently logged-in user.
+    """
+    # Get the username from the JWT
+    username = get_jwt_identity()
+
+    # Get the data from the request
+    data = request.json.get('data')
+
+    conn = get_db_connection(app.config['POSTGRESQL_URI'])
+    cur = conn.cursor(cursor_factory=RealDictCursor)  # Use RealDictCursor here
+
+    # Get the user's ID
+    cur.execute("SELECT user_id FROM users WHERE username = %s", (username,))
+    user_id = cur.fetchone()['user_id']  # Now you can access 'user_id' by name
+
+    # Save the user's account data
+    cur.execute(
+        "INSERT INTO account_data (user_id, data) VALUES (%s, %s)", (user_id, data))
+    conn.commit()
+
+    cur.close()
+    conn.close()
+
+    return jsonify(message='Data saved successfully'), 200
+
+
+@app.route('/backend/api/refresh', methods=['POST'])
+@jwt_required(refresh=True)
+def refresh():
+    username = get_jwt_identity()
+    ret = {
+        'access_token': create_access_token(identity=username)
+    }
+    return jsonify(ret), 200
+
 # This is for debugging without another frontend server
 # The host must be local for this work
 # @app.route('/')
