@@ -74,6 +74,7 @@ app.config.update(
     JWT_SECRET_KEY=JWT_KEY,
     JWT_COOKIE_SECURE=True,
     JWT_ACCESS_TOKEN_EXPIRES=timedelta(hours=1),
+    JWT_REFRESH_TOKEN_EXPIRES=timedelta(days=10),
     JWT_COOKIE_SAMESITE='None',
     JWT_TOKEN_LOCATION=['cookies'],  # Add this line
 )
@@ -340,8 +341,9 @@ def refresh():
     refresh_token = create_refresh_token(
         identity=username)  # create a new refresh token
     response = jsonify({'refresh': True})
-    set_access_tokens(response, access_token)
+    #set_access_tokens(response, access_token) this was mistake had this to tokens and not cookies
     # set the new refresh token in the response
+    set_access_cookies(response, access_token) 
     set_refresh_cookies(response, refresh_token)
     return response, 200
 
