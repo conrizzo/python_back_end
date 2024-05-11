@@ -1,5 +1,5 @@
 from flask_bcrypt import Bcrypt
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from flask import Flask, request, jsonify, send_file
 from flask_limiter import Limiter
 from flask_cors import CORS
@@ -26,65 +26,23 @@ import os
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
+
 # Session cookies and access tokens
 from flask_jwt_extended import (
     JWTManager, jwt_required, create_access_token,
-    get_jwt_identity, create_refresh_token, get_jwt
+    get_jwt_identity, create_access_token, create_refresh_token, get_jwt, set_access_cookies,
+    set_refresh_cookies, unset_jwt_cookies
 )
+
+# add dependency datetime, jwt cookies, may, 10 2024
 
 app = Flask(__name__)
+bcrypt = Bcrypt(app)
 # activate_redis = redis.Redis(host='localhost', port=6379, db=0)
 # storage = RedisStorage(activate_redis)
-'''
-def test_redis_connection():
-    try:
-        # Create a new Redis connection (replace with your settings if necessary)
-        r = Redis(host='localhost', port=6379, db=0)
-
-        # Perform a simple operation to check the connection
-        r.ping()
-
-        print("Successfully connected to Redis.")
-    except RedisError:
-        print("Failed to connect to Redis.")
-
-# Call the function to test the connection
-test_redis_connection()
-'''
-'''
-app.config['RATELIMIT_STORAGE_URL'] = 'redis://localhost:6379/0'
-
-cors = CORS(app, resources={r"/backend/api/*": {"origins": [
-            "https://conradswebsite.com", "https://project.conradswebsite.com"]}})
-
-# Connect to local Redis server
-r = redis.Redis(host='localhost', port=6379, db=0)
-'''
-
-'''
-redis_address = 'redis://localhost:6379/0'
-app.config['RATELIMIT_STORAGE_URL'] = redis_address
-
-cors = CORS(app, resources={r"/backend/api/*": {"origins": [
-            "https://conradswebsite.com", "https://project.conradswebsite.com"]}})
-
-# Connect to local Redis server
-# Connect to local Redis server
-r = redis.Redis(host='localhost', port=6379, db=0)
-
-limiter = Limiter(
-    app=app,
-    key_func=lambda: request.headers.get('X-Real-IP', request.remote_addr),
-    default_limits=["3 per 10 seconds"],
-    storage_uri=redis_address,
-    storage_options={"socket_connect_timeout": 30},
-    strategy="fixed-window", # or "moving-window"
-)
-
-
-
+"""
 ADD A KEY TO THE CONFIG ----------- not public
-'''
+"""
 
 
 """ 
@@ -96,7 +54,7 @@ SECRET_KEY = os.getenv('FLASK_SECRET_KEY')
 POSTGRESQL_PASSWORD = os.getenv('POSTGRESQL_PASSWORD')
 JWT_KEY = os.getenv('JWT_KEY')
 # Initialize JWTManager - extends Flask app to have JWT capabilities
-jwt = JWTManager(app)
+
 # Check if the secret key was not found and raise an error
 if SECRET_KEY is None:
     raise ValueError(
@@ -114,11 +72,23 @@ app.config.update(
     RATELIMIT_STORAGE_URL=redis_address,  # set rate limits to Redis
     POSTGRESQL_URI=postgresql_address,
     JWT_SECRET_KEY=JWT_KEY,
+    JWT_COOKIE_SECURE=True,
+    JWT_ACCESS_TOKEN_EXPIRES=timedelta(hours=1),
+    JWT_COOKIE_SAMESITE='None',
+    JWT_TOKEN_LOCATION=['cookies'],  # Add this line
 )
+# this must come after app.config - had this before stupid error I made!
+jwt = JWTManager(app)
 
 # Cors permissions for the frontend
+"""
 cors = CORS(app, resources={r"/backend/api/*": {"origins": [
             "https://conradswebsite.com", "https://project.conradswebsite.com"]}})
+            """
+
+# Cors permissions for the frontend, and allow credentials=True
+cors = CORS(app, resources={r"/backend/api/*": {"origins": [
+            "https://conradswebsite.com", "https://project.conradswebsite.com"]}}, supports_credentials=True)
 
 # Connect to local Redis server docker address
 redis_client = redis.Redis(host='some-redis', port=6379, db=0)
@@ -131,6 +101,24 @@ limiter = Limiter(
     storage_options={"socket_connect_timeout": 30},
     strategy="fixed-window",  # or "moving-window"
 )
+
+# Using an `after_request` callback, we refresh any token that is within 30
+# minutes of expiring. Change the timedeltas to match the needs of your application.
+
+
+@app.after_request
+def refresh_expiring_jwts(response):
+    try:
+        exp_timestamp = get_jwt()["exp"]
+        now = datetime.now(timezone.utc)
+        target_timestamp = datetime.timestamp(now + timedelta(minutes=30))
+        if target_timestamp > exp_timestamp:
+            access_token = create_access_token(identity=get_jwt_identity())
+            set_access_cookies(response, access_token)
+        return response
+    except (RuntimeError, KeyError):
+        # Case where there is not a valid JWT. Just return the original response
+        return response
 
 
 # Initialize the counter
@@ -206,9 +194,6 @@ def download_file():
     return send_file(path, as_attachment=True)
 
 
-bcrypt = Bcrypt(app)
-
-
 def get_db_connection(db_uri):
     """ 
         Connect to the database
@@ -253,6 +238,33 @@ def register():
     return jsonify({'message': 'User created successfully'}), 201
 
 
+"""
+@app.route('/backend/api/login', methods=['POST'])
+def login():
+
+    Lets user login to the PostgreSQL database    
+
+    data = request.get_json()
+    username = data['username']
+    password = data['password']
+
+    conn = get_db_connection(app.config['POSTGRESQL_URI'])
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute("SELECT * FROM users WHERE username = %s", (username,))
+    user = cur.fetchone()
+    cur.close()
+    conn.close()
+
+    if user and bcrypt.check_password_hash(user['password_hash'], password):
+        # Login successful, generate JWT and refresh token
+        access_token = create_access_token(identity=username)
+        refresh_token = create_refresh_token(identity=username)
+        return jsonify(access_token=access_token, refresh_token=refresh_token), 200
+    else:
+        return jsonify({'message': 'Invalid username or password'}), 401
+"""
+
+
 @app.route('/backend/api/login', methods=['POST'])
 def login():
     """
@@ -273,35 +285,21 @@ def login():
         # Login successful, generate JWT and refresh token
         access_token = create_access_token(identity=username)
         refresh_token = create_refresh_token(identity=username)
-        return jsonify(access_token=access_token, refresh_token=refresh_token), 200
+
+        # Use the tokens to set secure HTTP-only cookies
+        response = jsonify({'login': True})
+        set_access_cookies(response, access_token,)
+        set_refresh_cookies(response, refresh_token)
+        return response, 200
     else:
         return jsonify({'message': 'Invalid username or password'}), 401
 
 
-@app.route('/backend/api/account_data', methods=['GET'])
-@jwt_required()
-def get_account_data():
-    """
-    Fetches and returns the account data for the currently logged-in user.
-    """
-    # Get the username from the JWT
-    username = get_jwt_identity()
-
-    conn = get_db_connection(app.config['POSTGRESQL_URI'])
-    cur = conn.cursor(cursor_factory=RealDictCursor)
-
-    # Get the user's ID
-    cur.execute("SELECT user_id FROM users WHERE username = %s", (username,))
-    user_id = cur.fetchone()['user_id']
-
-    # Get the user's account data
-    cur.execute("SELECT data FROM account_data WHERE user_id = %s", (user_id,))
-    account_data = cur.fetchall()
-
-    cur.close()
-    conn.close()
-
-    return jsonify(account_data=account_data), 200
+@app.route("/backend/api/logout", methods=["POST"])
+def logout():
+    response = jsonify({"msg": "logout successful"})
+    unset_jwt_cookies(response)
+    return response
 
 
 @app.route('/backend/api/account_data', methods=['POST'])
@@ -319,7 +317,7 @@ def post_account_data():
     conn = get_db_connection(app.config['POSTGRESQL_URI'])
     cur = conn.cursor(cursor_factory=RealDictCursor)  # Use RealDictCursor here
 
-    # Get the user's ID
+    # Get the user's ID The % signs prevent SQL injection attacks
     cur.execute("SELECT user_id FROM users WHERE username = %s", (username,))
     user_id = cur.fetchone()['user_id']  # Now you can access 'user_id' by name
 
@@ -338,11 +336,40 @@ def post_account_data():
 @jwt_required(refresh=True)
 def refresh():
     username = get_jwt_identity()
-    ret = {
-        'access_token': create_access_token(identity=username)
-    }
-    return jsonify(ret), 200
+    access_token = create_access_token(identity=username, fresh=False)
+    refresh_token = create_refresh_token(
+        identity=username)  # create a new refresh token
+    response = jsonify({'refresh': True})
+    set_access_tokens(response, access_token)
+    # set the new refresh token in the response
+    set_refresh_cookies(response, refresh_token)
+    return response, 200
 
+
+@app.route('/backend/api/account_data', methods=['GET'])
+@jwt_required()
+def get_account_data():
+    """
+    Fetches and returns the account data for the currently logged-in user.
+    """
+    # Get the username from the JWT
+    username = get_jwt_identity()
+
+    conn = get_db_connection(app.config['POSTGRESQL_URI'])
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    # Get the user's ID The % signs prevent SQL injection attacks
+    cur.execute("SELECT user_id FROM users WHERE username = %s", (username,))
+    user_id = cur.fetchone()['user_id']
+
+    # Get the user's account data
+    cur.execute("SELECT data FROM account_data WHERE user_id = %s", (user_id,))
+    account_data = cur.fetchall()
+
+    cur.close()
+    conn.close()
+
+    return jsonify(account_data=account_data), 200
 # This is for debugging without another frontend server
 # The host must be local for this work
 # @app.route('/')
