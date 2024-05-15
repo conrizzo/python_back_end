@@ -1,6 +1,6 @@
 from flask_bcrypt import Bcrypt
 from datetime import datetime, timedelta, timezone
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_file, make_response
 from flask_limiter import Limiter
 from flask_cors import CORS
 from flask_limiter.extension import RateLimitExceeded
@@ -30,7 +30,7 @@ from psycopg2.extras import RealDictCursor
 # Session cookies and access tokens
 from flask_jwt_extended import (
     JWTManager, jwt_required, create_access_token,
-    get_jwt_identity, create_access_token, create_refresh_token, get_jwt, set_access_cookies,
+    get_jwt_identity, create_refresh_token, get_jwt, set_access_cookies,
     set_refresh_cookies, unset_jwt_cookies
 )
 
@@ -73,10 +73,12 @@ app.config.update(
     POSTGRESQL_URI=postgresql_address,
     JWT_SECRET_KEY=JWT_KEY,
     JWT_COOKIE_SECURE=True,
-    JWT_ACCESS_TOKEN_EXPIRES=timedelta(hours=1),
+    JWT_ACCESS_TOKEN_EXPIRES=timedelta(minutes=6),
     JWT_REFRESH_TOKEN_EXPIRES=timedelta(days=10),
     JWT_COOKIE_SAMESITE='None',
     JWT_TOKEN_LOCATION=['cookies'],  # Add this line
+    JWT_ACCESS_COOKIE_PATH='/backend/api/',
+    JWT_REFRESH_COOKIE_PATH='/backend/api/refresh',
 )
 # this must come after app.config - had this before stupid error I made!
 jwt = JWTManager(app)
@@ -110,9 +112,12 @@ limiter = Limiter(
 @app.after_request
 def refresh_expiring_jwts(response):
     try:
+        if request.path == '/backend/api/refresh':
+            return response
+
         exp_timestamp = get_jwt()["exp"]
         now = datetime.now(timezone.utc)
-        target_timestamp = datetime.timestamp(now + timedelta(minutes=30))
+        target_timestamp = datetime.timestamp(now + timedelta(minutes=6))
         if target_timestamp > exp_timestamp:
             access_token = create_access_token(identity=get_jwt_identity())
             set_access_cookies(response, access_token)
@@ -336,16 +341,16 @@ def post_account_data():
 @app.route('/backend/api/refresh', methods=['POST'])
 @jwt_required(refresh=True)
 def refresh():
-    username = get_jwt_identity()
-    access_token = create_access_token(identity=username, fresh=False)
-    refresh_token = create_refresh_token(
-        identity=username)  # create a new refresh token
-    response = jsonify({'refresh': True})
-    #set_access_tokens(response, access_token) this was mistake had this to tokens and not cookies
-    # set the new refresh token in the response
-    set_access_cookies(response, access_token) 
-    set_refresh_cookies(response, refresh_token)
-    return response, 200
+    try:
+        identity = get_jwt_identity()
+        access_token = create_access_token(identity=identity, fresh=False)
+        refresh_token = create_refresh_token(identity=identity)
+        response = make_response()  # Create an empty response
+        set_access_cookies(response, access_token)
+        set_refresh_cookies(response, refresh_token)
+        return response, 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
 
 
 @app.route('/backend/api/account_data', methods=['GET'])
