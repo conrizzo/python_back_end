@@ -5,7 +5,6 @@ from flask_limiter import Limiter
 from flask_cors import CORS
 from flask_limiter.extension import RateLimitExceeded
 
-
 import storage_data
 import cosine_similarity
 
@@ -73,8 +72,8 @@ app.config.update(
     POSTGRESQL_URI=postgresql_address,
     JWT_SECRET_KEY=JWT_KEY,
     JWT_COOKIE_SECURE=True,
-    JWT_ACCESS_TOKEN_EXPIRES=timedelta(minutes=6),
-    JWT_REFRESH_TOKEN_EXPIRES=timedelta(days=10),
+    JWT_ACCESS_TOKEN_EXPIRES=timedelta(minutes=30),
+    JWT_REFRESH_TOKEN_EXPIRES=timedelta(days=7),
     JWT_COOKIE_SAMESITE='None',
     JWT_TOKEN_LOCATION=['cookies'],  # Add this line
     JWT_ACCESS_COOKIE_PATH='/backend/api/',
@@ -117,7 +116,7 @@ def refresh_expiring_jwts(response):
 
         exp_timestamp = get_jwt()["exp"]
         now = datetime.now(timezone.utc)
-        target_timestamp = datetime.timestamp(now + timedelta(minutes=6))
+        target_timestamp = datetime.timestamp(now + timedelta(minutes=30))
         if target_timestamp > exp_timestamp:
             access_token = create_access_token(identity=get_jwt_identity())
             set_access_cookies(response, access_token)
@@ -237,41 +236,12 @@ def register():
     cur.execute("INSERT INTO users (username, password_hash) VALUES (%s, %s)",
                 (username, hashed_password))
     conn.commit()
-
     cur.close()
     conn.close()
-
     return jsonify({'message': 'User created successfully'}), 201
 
 
-"""
-@app.route('/backend/api/login', methods=['POST'])
-def login():
-
-    Lets user login to the PostgreSQL database    
-
-    data = request.get_json()
-    username = data['username']
-    password = data['password']
-
-    conn = get_db_connection(app.config['POSTGRESQL_URI'])
-    cur = conn.cursor(cursor_factory=RealDictCursor)
-    cur.execute("SELECT * FROM users WHERE username = %s", (username,))
-    user = cur.fetchone()
-    cur.close()
-    conn.close()
-
-    if user and bcrypt.check_password_hash(user['password_hash'], password):
-        # Login successful, generate JWT and refresh token
-        access_token = create_access_token(identity=username)
-        refresh_token = create_refresh_token(identity=username)
-        return jsonify(access_token=access_token, refresh_token=refresh_token), 200
-    else:
-        return jsonify({'message': 'Invalid username or password'}), 401
-"""
-
-
-@app.route('/backend/api/login', methods=['POST'])
+@app.route('/backend/api/sign_in', methods=['POST'])
 def login():
     """
     Lets user login to the PostgreSQL database    
@@ -301,7 +271,7 @@ def login():
         return jsonify({'message': 'Invalid username or password'}), 401
 
 
-@app.route("/backend/api/logout", methods=["POST"])
+@app.route("/backend/api/sign_out", methods=["POST"])
 def logout():
     response = jsonify({"msg": "logout successful"})
     unset_jwt_cookies(response)
@@ -309,6 +279,7 @@ def logout():
 
 
 @app.route('/backend/api/account_data', methods=['POST'])
+@limiter.limit("6/10seconds")
 @jwt_required()
 def post_account_data():
     """
@@ -354,6 +325,7 @@ def refresh():
 
 
 @app.route('/backend/api/account_data', methods=['GET'])
+@limiter.limit("6/10seconds")
 @jwt_required()
 def get_account_data():
     """
@@ -369,14 +341,51 @@ def get_account_data():
     cur.execute("SELECT user_id FROM users WHERE username = %s", (username,))
     user_id = cur.fetchone()['user_id']
 
-    # Get the user's account data
-    cur.execute("SELECT data FROM account_data WHERE user_id = %s", (user_id,))
+    # Get the user's account data along with created_at
+    cur.execute("SELECT data, created_at FROM account_data WHERE user_id = %s", (user_id,))
     account_data = cur.fetchall()
 
     cur.close()
     conn.close()
 
     return jsonify(account_data=account_data), 200
+
+
+@app.route('/backend/api/account_data/<int:select_item>', methods=['DELETE'])
+@limiter.limit("6/10seconds")
+@jwt_required()
+def delete_account_data(select_item):
+    
+    """
+    This will delete a message by the user specific to it's slot in the array for the user (0-infinite)
+    If the select_item is negative e.g -1 to -infinite it will delete all messages
+
+    NOTE: This should only get a negative Input for 'select_item' if the user wants to DELETE ALL MESSAGES!
+
+    """
+    username = get_jwt_identity()
+    conn = get_db_connection(app.config['POSTGRESQL_URI'])
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute("SELECT user_id FROM users WHERE username = %s", (username,))
+    user_id = cur.fetchone()['user_id']
+
+    if select_item >= 0:
+        cur.execute(
+            "SELECT data_id FROM account_data WHERE user_id = %s ORDER BY data_id ASC", (user_id,))
+        data_ids = [row['data_id'] for row in cur.fetchall()]
+
+        if select_item < len(data_ids):
+            cur.execute("DELETE FROM account_data WHERE data_id = %s AND user_id = %s",
+                        (data_ids[select_item], user_id))
+        else:
+            return jsonify({'message': 'Invalid item number'}), 400
+    else:
+        cur.execute("DELETE FROM account_data WHERE user_id = %s", (user_id,))
+
+    conn.commit()
+    return jsonify({'message': 'Item(s) deleted'}), 200
+
+
 # This is for debugging without another frontend server
 # The host must be local for this work
 # @app.route('/')
@@ -387,30 +396,3 @@ def get_account_data():
 # This is only for development, Gunicorn runs this script automatically and we don't need a main to run the app
 # if __name__ == '__main__':
 #    app.run(host='0.0.0.0', port=5000)
-
-
-# Test psql connection --- testing purposes
-def test_postgresql_connection():
-    try:
-        # Connect to your PostgreSQL database
-        conn = get_db_connection(app.config['POSTGRESQL_URI'])
-
-        # Create a cursor object
-        cur = conn.cursor()
-
-        # Execute a simple query
-        cur.execute('SELECT version();')
-
-        # Fetch and print the result
-        db_version = cur.fetchone()
-        print(f"Connected to PostgreSQL database: {db_version[0]}")
-
-        # Close the cursor and connection
-        cur.close()
-        conn.close()
-
-    except Exception as e:
-        print(f"An error occurred: {e}")
-
-
-test_postgresql_connection()
