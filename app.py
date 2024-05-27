@@ -1,10 +1,18 @@
+# Required imports
 from flask_bcrypt import Bcrypt
 from datetime import datetime, timedelta, timezone
 from flask import Flask, request, jsonify, send_file, make_response
 from flask_limiter import Limiter
 from flask_cors import CORS
 from flask_limiter.extension import RateLimitExceeded
+import json
+import bleach
+import redis
+from redis import Redis, RedisError
+import socket
+import os
 
+# Files for the backend
 import storage_data
 import cosine_similarity
 
@@ -12,14 +20,6 @@ import cosine_similarity
 off for now 
 import country_music_lyrics 
 """
-
-import json
-import bleach
-import redis
-from redis import Redis, RedisError
-
-import socket
-import os
 
 # PostgreSQL database
 import psycopg2
@@ -176,8 +176,17 @@ def leave_message():
 
     message_dict = {"date": date_string, "name": name,
                     "subject": subject, "message": message}
-    with open('user_messages.json', 'a') as file:
-        file.write(json.dumps(message_dict) + '\n')
+
+    # Load the existing messages
+    with open('user_messages.json', 'r') as file:
+        existing_messages = json.load(file)
+
+    # append the new message
+    existing_messages.append(message_dict)
+
+    # Write the messages back to the file
+    with open('user_messages.json', 'w') as file:
+        json.dump(existing_messages, file)
 
     return jsonify({'message': 'Form submission successful'}), 200
 
@@ -266,6 +275,7 @@ def login():
         response = jsonify({'login': True})
         set_access_cookies(response, access_token,)
         set_refresh_cookies(response, refresh_token)
+
         return response, 200
     else:
         return jsonify({'message': 'Invalid username or password'}), 401
@@ -276,6 +286,21 @@ def logout():
     response = jsonify({"msg": "logout successful"})
     unset_jwt_cookies(response)
     return response
+
+
+@app.route('/backend/api/refresh', methods=['POST'])
+@jwt_required(refresh=True)
+def refresh():
+    try:
+        identity = get_jwt_identity()
+        access_token = create_access_token(identity=identity, fresh=False)
+        refresh_token = create_refresh_token(identity=identity)
+        response = make_response()  # Create an empty response
+        set_access_cookies(response, access_token)
+        set_refresh_cookies(response, refresh_token)
+        return response, 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
 
 
 @app.route('/backend/api/account_data', methods=['POST'])
@@ -309,21 +334,6 @@ def post_account_data():
     return jsonify(message='Data saved successfully'), 200
 
 
-@app.route('/backend/api/refresh', methods=['POST'])
-@jwt_required(refresh=True)
-def refresh():
-    try:
-        identity = get_jwt_identity()
-        access_token = create_access_token(identity=identity, fresh=False)
-        refresh_token = create_refresh_token(identity=identity)
-        response = make_response()  # Create an empty response
-        set_access_cookies(response, access_token)
-        set_refresh_cookies(response, refresh_token)
-        return response, 200
-    except Exception as e:
-        return jsonify({'error': str(e)}), 400
-
-
 @app.route('/backend/api/account_data', methods=['GET'])
 @limiter.limit("6/10seconds")
 @jwt_required()
@@ -342,7 +352,8 @@ def get_account_data():
     user_id = cur.fetchone()['user_id']
 
     # Get the user's account data along with created_at
-    cur.execute("SELECT data, created_at FROM account_data WHERE user_id = %s", (user_id,))
+    cur.execute(
+        "SELECT data, created_at FROM account_data WHERE user_id = %s", (user_id,))
     account_data = cur.fetchall()
 
     cur.close()
@@ -355,7 +366,6 @@ def get_account_data():
 @limiter.limit("6/10seconds")
 @jwt_required()
 def delete_account_data(select_item):
-    
     """
     This will delete a message by the user specific to it's slot in the array for the user (0-infinite)
     If the select_item is negative e.g -1 to -infinite it will delete all messages
@@ -384,6 +394,30 @@ def delete_account_data(select_item):
 
     conn.commit()
     return jsonify({'message': 'Item(s) deleted'}), 200
+
+# Just a note - TRAILING COMMAS ARE NOT ALLOWED AT END OF JSON ARRAY
+@app.route('/backend/api/special_area', methods=['GET'])
+@jwt_required()
+def special_area():
+    # Get the identity from the JWT
+    username = get_jwt_identity()
+    # set file name to get messages from
+    file_name = "user_messages.json"
+    message = ''
+
+    if username == 'conrad':
+        # For the moment this accesses messages users send to the server on About page to test this
+        with open(file_name, 'r') as f:
+            file_data = json.load(f)
+            # set message to return to the file data
+            message = file_data
+    else:
+        message = 'Access denied'
+
+    # Create the response
+    response = jsonify(message)
+    # Return the response
+    return response, 200
 
 
 # This is for debugging without another frontend server
