@@ -237,7 +237,7 @@ def register():
         cur.close()
         conn.close()
         # 409 Conflict
-        return jsonify({'error': 'Username already exists'}), 409
+        return jsonify({'message': 'Username already exists'}), 409
 
     hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
 
@@ -252,9 +252,11 @@ def register():
 
 @app.route('/backend/api/sign_in', methods=['POST'])
 def login():
+    
     """
     Lets user login to the PostgreSQL database    
     """
+    
     data = request.get_json()
     username = data['username']
     password = data['password']
@@ -287,6 +289,36 @@ def logout():
     unset_jwt_cookies(response)
     return response
 
+@app.route('/backend/api/change_password', methods=['POST'])
+@jwt_required()
+def change_password():
+    
+    """
+    Lets user change their password
+    """
+    
+    data = request.get_json()
+    username = data['username']
+    current_password = data['current_password']
+    new_password = data['new_password']
+
+    conn = get_db_connection(app.config['POSTGRESQL_URI'])
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute("SELECT * FROM users WHERE username = %s", (username,))
+    user = cur.fetchone()
+
+    if user and bcrypt.check_password_hash(user['password_hash'], current_password):
+        # If the current password is correct, hash new password and update PostgreSQL data
+        new_password_hash = bcrypt.generate_password_hash(new_password).decode('utf-8')
+        cur.execute("UPDATE users SET password_hash = %s WHERE username = %s", (new_password_hash, username))
+        conn.commit()
+        cur.close()
+        conn.close()
+        return jsonify({'message': 'Password changed successfully'}), 200
+    else:
+        cur.close()
+        conn.close()
+        return jsonify({'message': 'Username or current password is incorrect!'}), 401
 
 @app.route('/backend/api/refresh', methods=['POST'])
 @jwt_required(refresh=True)
@@ -338,9 +370,11 @@ def post_account_data():
 @limiter.limit("6/10seconds")
 @jwt_required()
 def get_account_data():
+    
     """
     Fetches and returns the account data for the currently logged-in user.
     """
+    
     # Get the username from the JWT
     username = get_jwt_identity()
 
@@ -366,6 +400,7 @@ def get_account_data():
 @limiter.limit("6/10seconds")
 @jwt_required()
 def delete_account_data(select_item):
+    
     """
     This will delete a message by the user specific to it's slot in the array for the user (0-infinite)
     If the select_item is negative e.g -1 to -infinite it will delete all messages
@@ -373,6 +408,7 @@ def delete_account_data(select_item):
     NOTE: This should only get a negative Input for 'select_item' if the user wants to DELETE ALL MESSAGES!
 
     """
+    
     username = get_jwt_identity()
     conn = get_db_connection(app.config['POSTGRESQL_URI'])
     cur = conn.cursor(cursor_factory=RealDictCursor)
