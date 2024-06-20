@@ -7,8 +7,11 @@ from nltk.tokenize import word_tokenize
 from collections import Counter
 from nltk.corpus import stopwords
 import string
+
 nltk.download('punkt')
 nltk.download('stopwords')
+nltk.download('averaged_perceptron_tagger')
+
 
 songs = [
     {
@@ -130,113 +133,102 @@ Mamas don't let your babies grow up to be cowboys
 'Cause they'll never stay home and they're always alone
 Even with someone they love
 """
-
     }
 ]
-
-nltk.download('averaged_perceptron_tagger')
-nltk.download('punkt')
 
 # set lyrics to lowercase in the dict file
 for i in range(len(songs)):
     songs[i]['lyrics'] = songs[i]['lyrics'].lower()
-
 print(songs[0]['lyrics'])
-
 test_lyrics = songs[1]['lyrics']
 
-# tagged_words = nltk.pos_tag(tokens)
 
-# print(tokens)
-# print(tagged_words)
+class song_object:
 
+    """
+    The song object tokenizes the lyrics of a list of country songs
+    param: songs: a list of dictionaries containing the title, artist, and lyrics of a song
+    param: list_of_songs: a list of tokenized lyrics of each song generated in the constructor
 
-class ModifyLyrics:
+    """
 
-    def __init__(self, title, lyrics):
-        self.title = title
-        self.lyrics = lyrics
+    def __init__(self, songs):
+        self.songs = songs
+        self.attribute = "run"
+        self.list_of_songs = self.tokenize_lyrics()
 
-    def title(self):
-        return self.title
+    def choice(self):
+        return self.topic
 
+    def get_list_of_songs(self):
+        return self.list_of_songs
 
-def tokenize_lyrics(top_words=1):
+    def more_than_three(self):
+        """
+        Here the goal is to return all words that repeat 3 or more times in the lyrics
+        """
+        def filter_tuples(tuples_list):
+            return list((t for t in tuples_list if t[1] >= 3))
+        filtered_lists = []
+        for i in self.list_of_songs:
+            filtered_lists.append(filter_tuples(i))
+            return filtered_lists
 
-    cleaned_lyics = []
-    # create the vocabulary
-    vocab = set()
-    # create the bag-of-words model
-    bow_model = []
+    def tokenize_lyrics(self):
+        """
+        Tokenizes the lyrics of each song in the list of songs
+        """
+        cleaned_lyrics = []
+        vocab = set()
+        bow_model = []
+        for song in range(len(self.songs)):
+            lyrics = self.songs[song]['lyrics']
+            tokens = word_tokenize(lyrics)
+            word_counts = {}
+            vocab.update(tokens)
+            # Remove stopwords and punctuation
+            stop_words = set(stopwords.words('english'))
+            # Add custom words to remove e.g. slang stuff a lot of country songs have
+            custom_words = ["the", "a", ",", "in", "his", "him", "and", "to", "of", "on", "for", "it", "an", "that", "with",
+                            "is", "was", "he", "for", "as", "I", "his", "with", "they", "at", "be", "this", "from", "or", "by",
+                            "are", "we", "you", "her", "will", "there", "their", "what", "so", "if", "into", "all", "your",
+                            "has", "can", "were", "my", "she", "do", "its", "about", "who", "them", "would", "me", "more",
+                            "himself", "one", "our", "but", "so", "not", "than", "these", "he's", "who's", "i'm", "she's",
+                            "it's", "that's", "there's", "where's", "how's", "what's", "here's", "you're", "i've", "we've",
+                            "they've", "isn't", "wasn't", "aren't", "weren't", "can't", "couldn't", "don't", "didn't", "won't",
+                            "wouldn't", "shouldn't", "mustn't", "hasn't", "haven't", "hadn't", "doesn't", "aren't", "n't",
+                            "get", "let", "'ll", "'m", "'em", "things", "make", "well", "'s", "'re", "yeah", "could", "'til", "last", "better", "'cause", "'d"]
+            for word in custom_words:
+                stop_words.add(word)
 
-    for song in range(len(songs)):
-        lyrics = songs[song]['lyrics']
-        print(lyrics)
+            punctuation = set(string.punctuation)
+            filtered_tokens = [
+                word for word in tokens if word not in stop_words and word not in punctuation]
+            # count the occurrences of each word
+            for word in filtered_tokens:
+                if word in word_counts:
+                    word_counts[word] += 1
+                else:
+                    word_counts[word] = 1
 
-        tokens = word_tokenize(lyrics)
+            # print each word with its count in
+            sorted_word_counts = collections.Counter(word_counts)
+            cleaned_lyrics.append(sorted_word_counts.most_common())
 
-        # create a dictionary to store the word counts
-        word_counts = {}
+        return cleaned_lyrics
 
-        # update the vocabulary
-        vocab.update(tokens)
-
-        # Remove stopwords and punctuation
-        stop_words = set(stopwords.words('english'))
-        # Add custom words
-        custom_words = ["the", "a", ",", "in", "his", "him", "and", "to", "of", "on", "for", "it", "an", "that", "with",
-                        "is", "was", "he", "for", "as", "I", "his", "with", "they", "at", "be", "this", "from", "or", "by",
-                        "are", "we", "you", "her", "will", "there", "their", "what", "so", "if", "into", "all", "your",
-                        "has", "can", "were", "my", "she", "do", "its", "about", "who", "them", "would", "me", "more",
-                        "himself", "one", "our", "but", "so", "not", "than", "these", "he's", "who's", "i'm", "she's",
-                        "it's", "that's", "there's", "where's", "how's", "what's", "here's", "you're", "i've", "we've",
-                        "they've", "isn't", "wasn't", "aren't", "weren't", "can't", "couldn't", "don't", "didn't", "won't",
-                        "wouldn't", "shouldn't", "mustn't", "hasn't", "haven't", "hadn't", "doesn't", "aren't", "n't",
-                        "get", "let", "'ll", "'m", "'em", "things", "make", "well", "'s","'re", "yeah", "could", "'til"
-                        ,"last", "better", "'cause", "'d"
-                        
-                        
-                        ]
-        for word in custom_words:
-            stop_words.add(word)
-        punctuation = set(string.punctuation)
-
-        # remove the stopwords and punctuation
-        filtered_tokens = [
-            word for word in tokens if word not in stop_words and word not in punctuation]
-
-        # count the occurrences of each word
-        for word in filtered_tokens:
-            if word in word_counts:
-                word_counts[word] += 1
-            else:
-                word_counts[word] = 1
-
-        # print each word with its count in
-        sorted_word_counts = collections.Counter(word_counts)
-        cleaned_lyics.append(sorted_word_counts.most_common(top_words))
-
-    return cleaned_lyics
-
-# bow_model.append(sorted_word_counts)
-
-
-# print the 10 most common items
-# for model in bow_model:
-#   print(model.most_common(10))
-
-# puts the lyrics for each song into a list for now
-run_function = tokenize_lyrics(top_words=20)
-
-for i in run_function:
-    print(i)
-    print("")
+# sort of the goal here might be to run a sentiment analysis on the lyrics and decide how positive or negative the song is
 
 
+class evaluation:
+    def __init__(self):
+        self.song = "Test"
 
-#No need to convert dictionary to json objects but for reference -
-#import json
+    def tokenize(self):
+        return tokenize_lyrics
 
-#json_object = json.dumps(songs[0]['lyrics'])
 
-#print(json_object)
+the_song = song_object(songs)
+
+
+print(the_song.more_than_three())
