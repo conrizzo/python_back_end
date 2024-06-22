@@ -1,32 +1,26 @@
 
-from extensions import bcrypt
-# Required imports
+# config.py imports
+from config import SECRET_KEY, JWT_KEY, redis_address, postgresql_address, redis_client
+# extensions.py imports
+from extensions import bcrypt, jwt
 
-from datetime import datetime, timedelta, timezone
-from flask import Flask, request, jsonify, send_file, make_response
-from flask_limiter import Limiter
-from flask_cors import CORS
-from flask_limiter.extension import RateLimitExceeded
-import json
-import bleach
-import redis
-from redis import Redis, RedisError
-import socket
-import os
-
-# File Imports for the backend
-# make database connections to PostgreSQL
+# database_connections.py imports postgresql
 from database_connections import get_db_connection
+
+# import blueprints
 from authorization import authorization_bp
 from messages import messages_bp
-from limiter import limiter
+from first_routes import first_routes_bp
 
+# rate limiter using redis
+from limiter import limiter, RateLimitExceeded
+from flask import Flask
+from datetime import timedelta
 # websockets
 # from websocket import socketio
 
-# Files for the backend
-import storage_data
-import cosine_similarity
+from flask_cors import CORS
+
 """
 off for now
 import country_music_lyrics
@@ -42,61 +36,20 @@ from flask_jwt_extended import (
     set_refresh_cookies, unset_jwt_cookies
 )
 
-# Initialize the counter
-get_data_counter = int(storage_data.read_file())
-# from .database import database_bp
-
-# add dependency datetime, jwt cookies, may, 10 2024
-
-
 # activate_redis = redis.Redis(host='localhost', port=6379, db=0)
 # storage = RedisStorage(activate_redis)
-"""
-ADD A KEY TO THE CONFIG ----------- not public
-"""
-
-
-# jwt = JWTManager(app) # this jwt must come after app.config - had this before stupid error I made!
-# bcrypt = Bcrypt(app) # Initialize the Bcrypt app - encryption of passwords with hashing
 # socketio.init_app(app)  # Initialize the socketio app - websockets
 
 
 def create_app():
     app = Flask(__name__)
 
-    """
-    All these secret keys need to be set on Docker container run,
-    as environment variables, don't forget this or application wont run!
-    or in the Docker compose file, multiple ways to do this!
-    """
-    SECRET_KEY = os.getenv('FLASK_SECRET_KEY')
-    POSTGRESQL_PASSWORD = os.getenv('POSTGRESQL_PASSWORD')
-    # Initialize JWTManager - extends Flask app to have JWT capabilities
-    JWT_KEY = os.getenv('JWT_KEY')
-    # Check if the secret key was not found and raise an error
-    if SECRET_KEY is None:
-        raise ValueError(
-            "No secret key set. Please set the FLASK_SECRET_KEY environment variable.")
-    # Where 'some-redis' is the docker container name
-    redis_address = 'redis://some-redis:6379/0'
-    # Where 'postgre-sql' is the docker container name
-    postgresql_address = f'postgresql://conrad:{POSTGRESQL_PASSWORD}@postgre-sql:5432/mydatabase'
-
     @app.errorhandler(RateLimitExceeded)
     def ratelimit_handler(e):
         return {'message': 'Rate limit exceeded, the limit is 3 queries per 10 seconds.'}, 429
-    # Connect to local Redis server docker address
-    redis_client = redis.Redis(host='some-redis', port=6379, db=0)
-    # Cors permissions for the frontend
-    """
+
     cors = CORS(app, resources={r"/backend/api/*": {"origins": [
-                "https://conradswebsite.com", "https://project.conradswebsite.com"]}})
-    """
-    # Cors permissions for the frontend, and allow credentials=True
-    cors = CORS(app, resources={r"/backend/api/*": {"origins": [
-                "https://conradswebsite.com", "https://project.conradswebsite.com"]}}, supports_credentials=True)
-    
-    jwt = JWTManager()   
+        "https://conradswebsite.com", "https://project.conradswebsite.com"]}}, supports_credentials=True)
 
     app.config.update(
         SECRET_KEY=SECRET_KEY,
@@ -119,63 +72,7 @@ def create_app():
 
     app.register_blueprint(authorization_bp)
     app.register_blueprint(messages_bp)
-
-    @app.route('/backend/api/data')
-    @limiter.limit("3/10seconds")
-    def get_data():
-        global get_data_counter
-        get_data_counter += 1
-        # Redis
-        counter = redis_client.get('counter')
-        redis_client.incr('counter')
-        with open('counter.txt', 'w') as f:
-            f.write(str(counter))
-        storage_data.write_file(str(get_data_counter))
-        return {'message': f'The backend server says hello back! The number of queries is: {get_data_counter}'}
-
-    @app.route('/backend/api/leave_message', methods=['POST'])
-    @limiter.limit("1/30seconds")
-    def leave_message():
-        data = request.get_json()
-        name, subject, message = data.get('name'), data.get(
-            'subject'), data.get('message')
-        # Sanitize the inputs with bleach
-        name, subject, message = bleach.clean(
-            name), bleach.clean(subject), bleach.clean(message)
-
-        current_datetime = datetime.now()
-        date_string = current_datetime.strftime('%Y-%m-%d %H:%M:%S')
-
-        message_dict = {"date": date_string, "name": name,
-                        "subject": subject, "message": message}
-
-        # Load the existing messages
-        with open('user_messages.json', 'r') as file:
-            existing_messages = json.load(file)
-
-            # append the new message
-            existing_messages.append(message_dict)
-
-            # Write the messages back to the file
-            with open('user_messages.json', 'w') as file:
-                json.dump(existing_messages, file)
-
-        return jsonify({'message': 'Form submission successful'}), 200
-
-    @app.route('/backend/api/cosine', methods=['POST'])
-    @limiter.limit("1/10seconds")
-    def get_cosine_similarity():
-        data = request.get_json()
-        s1, s2 = data.get('sentence1'), data.get('sentence2')
-        s1, s2 = bleach.clean(s1), bleach.clean(s2)
-        result = cosine_similarity.compute_similarity(s1, s2)
-        return jsonify(result)  # Convert the dictionary to a JSON response
-
-    @app.route('/backend/api/download')
-    @limiter.limit("1/30seconds")
-    def download_file():
-        path = "test100.txt"
-        return send_file(path, as_attachment=True)
+    app.register_blueprint(first_routes_bp)
 
     return app
 

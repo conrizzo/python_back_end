@@ -1,7 +1,7 @@
 from flask_limiter import Limiter
 from flask import request
 import redis
-
+from flask_limiter.extension import RateLimitExceeded
 
 # Where some-redis is the docker container name
 redis_address = 'redis://some-redis:6379/0'

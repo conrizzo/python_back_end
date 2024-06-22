@@ -1,13 +1,12 @@
 
 from extensions import bcrypt
 from flask import current_app
-
-
 from database_connections import get_db_connection # make database connections to PostgreSQL
 from flask import Blueprint
 from flask import Flask, jsonify, request, make_response
+# JWTManager
 from flask_jwt_extended import (
-    get_jwt, JWTManager, jwt_required, create_access_token,
+    get_jwt, jwt_required, create_access_token,
     create_refresh_token, get_jwt_identity, set_access_cookies,
     set_refresh_cookies, unset_jwt_cookies
 )
