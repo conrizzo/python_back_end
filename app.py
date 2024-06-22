@@ -1,7 +1,7 @@
 
-
+from extensions import bcrypt
 # Required imports
-from flask_bcrypt import Bcrypt
+
 from datetime import datetime, timedelta, timezone
 from flask import Flask, request, jsonify, send_file, make_response
 from flask_limiter import Limiter
@@ -55,35 +55,32 @@ get_data_counter = int(storage_data.read_file())
 ADD A KEY TO THE CONFIG ----------- not public
 """
 
-"""
-All these secret keys need to be set on Docker container run,
-as environment variables, don't forget this or application wont run!
-or in the Docker compose file, multiple ways to do this!
-"""
-SECRET_KEY = os.getenv('FLASK_SECRET_KEY')
-POSTGRESQL_PASSWORD = os.getenv('POSTGRESQL_PASSWORD')
-# Initialize JWTManager - extends Flask app to have JWT capabilities
-JWT_KEY = os.getenv('JWT_KEY')
-# Check if the secret key was not found and raise an error
-if SECRET_KEY is None:
-    raise ValueError(
-        "No secret key set. Please set the FLASK_SECRET_KEY environment variable.")
-# Where some-redis is the docker container name
-redis_address = 'redis://some-redis:6379/0'
-# Where postgre-sql is the docker container name
-postgresql_address = f'postgresql://conrad:{POSTGRESQL_PASSWORD}@postgre-sql:5432/mydatabase'
 
 # jwt = JWTManager(app) # this jwt must come after app.config - had this before stupid error I made!
 # bcrypt = Bcrypt(app) # Initialize the Bcrypt app - encryption of passwords with hashing
 # socketio.init_app(app)  # Initialize the socketio app - websockets
 
 
-jwt = JWTManager()
-bcrypt = Bcrypt()
-
-
 def create_app():
     app = Flask(__name__)
+
+    """
+    All these secret keys need to be set on Docker container run,
+    as environment variables, don't forget this or application wont run!
+    or in the Docker compose file, multiple ways to do this!
+    """
+    SECRET_KEY = os.getenv('FLASK_SECRET_KEY')
+    POSTGRESQL_PASSWORD = os.getenv('POSTGRESQL_PASSWORD')
+    # Initialize JWTManager - extends Flask app to have JWT capabilities
+    JWT_KEY = os.getenv('JWT_KEY')
+    # Check if the secret key was not found and raise an error
+    if SECRET_KEY is None:
+        raise ValueError(
+            "No secret key set. Please set the FLASK_SECRET_KEY environment variable.")
+    # Where 'some-redis' is the docker container name
+    redis_address = 'redis://some-redis:6379/0'
+    # Where 'postgre-sql' is the docker container name
+    postgresql_address = f'postgresql://conrad:{POSTGRESQL_PASSWORD}@postgre-sql:5432/mydatabase'
 
     @app.errorhandler(RateLimitExceeded)
     def ratelimit_handler(e):
@@ -98,6 +95,9 @@ def create_app():
     # Cors permissions for the frontend, and allow credentials=True
     cors = CORS(app, resources={r"/backend/api/*": {"origins": [
                 "https://conradswebsite.com", "https://project.conradswebsite.com"]}}, supports_credentials=True)
+    
+    jwt = JWTManager()   
+
     app.config.update(
         SECRET_KEY=SECRET_KEY,
         RATELIMIT_STORAGE_URL=redis_address,
@@ -177,22 +177,10 @@ def create_app():
         path = "test100.txt"
         return send_file(path, as_attachment=True)
 
-    
-    
     return app
 
 
-
-"""
-def get_db_connection(db_uri):
-
-        Connect to the database
-        Parameters: db_uri (str): The URI of the database
-        Returns: conn (psycopg2.extensions.connection): The connection object    
-
-    conn = psycopg2.connect(db_uri)
-    return conn
-"""
+app = create_app()
 
 """
 @app.route('/backend/api/country_music_generator', methods=['POST'])
@@ -205,17 +193,6 @@ def country_music_lyric_data():
     return jsonify(results)  # Convert the list to a JSON response
 """
 
-# This is for debugging without another frontend server
-# The host must be local for this work
-# @app.route('/')
-# def home():
-#    return "Hello, World!"
-
-
-# This is only for development, Gunicorn runs this script automatically and we don't need a main to run the app
-# if __name__ == '__main__':
-#    app.run(host='0.0.0.0', port=5000)
-
 
 """ 
 local development
@@ -226,5 +203,3 @@ if __name__ == "__main__":
     app.run()
 
 """
-app = create_app()
-

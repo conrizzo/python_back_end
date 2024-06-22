@@ -3,9 +3,9 @@ from database_connections import get_db_connection # make database connections t
 
 from flask import Blueprint
 from flask import Flask, jsonify, request, make_response
-from flask_bcrypt import Bcrypt
+
 from flask_jwt_extended import (
-    JWTManager, jwt_required, create_access_token,
+    get_jwt, JWTManager, jwt_required, create_access_token,
     create_refresh_token, get_jwt_identity, set_access_cookies,
     set_refresh_cookies, unset_jwt_cookies
 )
