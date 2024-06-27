@@ -21,10 +21,7 @@ from datetime import timedelta
 
 from flask_cors import CORS
 
-"""
-off for now
-import country_music_lyrics
-"""
+
 # PostgreSQL database
 import psycopg2
 from psycopg2.extras import RealDictCursor

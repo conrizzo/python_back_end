@@ -7,7 +7,6 @@ from nltk.tokenize import word_tokenize
 from collections import Counter
 from nltk.corpus import stopwords
 import string
-
 nltk.download('punkt')
 nltk.download('stopwords')
 nltk.download('averaged_perceptron_tagger')

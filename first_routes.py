@@ -15,10 +15,17 @@ import storage_data
 import cosine_similarity
 from limiter import limiter  # Import the limiter
 
+"""
+off for now
+import country_music_lyrics
+"""
+
 # Initialize the counter
 get_data_counter = int(storage_data.read_file())
 
 first_routes_bp = Blueprint('first_routes', __name__)
+
+
 
 
 @first_routes_bp.route('/backend/api/data')
