@@ -10,10 +10,12 @@ import bleach
 import socket
 from flask import Blueprint, current_app
 
-# Files for the backend
-import storage_data
-import cosine_similarity
+# Extra Files for this page to use with the routes
 from limiter import limiter  # Import the limiter
+import storage_data  # Simply reads and writes to a file
+# This just runs a pre-trained sentence transformers cosine similarity model
+import cosine_similarity
+import blackjack_game.py  # This is a simple blackjack game
 
 """
 off for now
@@ -24,8 +26,6 @@ import country_music_lyrics
 get_data_counter = int(storage_data.read_file())
 
 first_routes_bp = Blueprint('first_routes', __name__)
-
-
 
 
 @first_routes_bp.route('/backend/api/data')
@@ -87,3 +87,23 @@ def get_cosine_similarity():
 def download_file():
     path = "test100.txt"
     return send_file(path, as_attachment=True)
+
+
+@first_routes_bp.route('/backend/api/blackjack', methods=['POST'])
+@limiter.limit("10/2seconds")
+def blackjack():
+    data = request.get_json()
+    action = data.get('action')
+    number = data.get('number', 0)  # Default to 0 if not provided
+
+    if action == 'button1':
+        # Process button 1 action
+        return jsonify({'message': 'Button 1 processed', 'number': number})
+    elif action == 'button2':
+        # Process button 2 action
+        return jsonify({'message': 'Button 2 processed', 'number': number})
+    elif action == 'input':
+        # Process input action
+        return jsonify({'message': 'Bet', 'number': number})
+    else:
+        return jsonify({'error': 'Invalid action'}), 400
