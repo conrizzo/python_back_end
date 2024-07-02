@@ -96,27 +96,36 @@ def download_file():
 @limiter.limit("10/2seconds")
 def blackjack():
     data = request.get_json()
-    action, number = data.get('action'), data.get('number', 0)  # Default to 0 if not provided
+    start, action, number = data.get('start_game'), data.get(
+        'user_action'), data.get('bet_amount', 0)
+
+    blackjack_game.main()  # Initialize the deck
 
     response = {}  # Initialize an empty response object
 
+    if start_game == 'start':
+        # Process 'start' action from frontend BUTTON
+        game_result, message, player_hand, dealer_hand, player_chips = blackjack_game.start_game(
+            number)
+
     if action == 'hit':
         # Process 'hit' action from frontend BUTTON
-        game_result, message, player_hand, dealer_hand, player_chips = game_logic_hit()
+
     elif action == 'stay':
         # Process 'stay' action from frontend BUTTON
-        game_result, message, player_hand, dealer_hand, player_chips = game_logic_stay()
-    elif action == 'bet':
-        # Process 'bet' action from frontend BUTTON using FIELD: INTEGER
-        game_result, message, player_hand, dealer_hand, player_chips = game_logic_bet(
-            number)
+
     else:
         return jsonify({'error': 'Invalid action'}), 400
+
+    game_state = blackjack_game.return_result(
+        player_hand, dealer_hand, player_score, dealer_score, player_chips)
 
     response["gameResult"] = game_result
     response["message"] = message
     response["playerHand"] = player_hand
+    response["dealerScore"] = dealer_score
     response["dealerHand"] = dealer_hand
+    response["playerScore"] = player_score
     response["playerChips"] = player_chips
 
     return jsonify(response)  # Return the response object

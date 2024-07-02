@@ -25,7 +25,7 @@ class BlackjackGame:
         else:
             return int(card[0])
 
-    def game_loop(self):
+    def game_loop(self, user_bet_amount=0):
         random.shuffle(self.deck.deck)
 
         if self.player_chips == 0:
@@ -36,6 +36,7 @@ class BlackjackGame:
             print("Player Chips:", self.player_chips)
             try:
                 self.bet = int(input('Enter an amount to bet: '))
+
                 if self.bet > self.player_chips:
                     print(
                         "You don't have enough chips to bet that amount. Please try again.")
@@ -55,6 +56,8 @@ class BlackjackGame:
             dealer_hand = [the_deck.pop(), the_deck.pop()]
             player_score = 0
             dealer_score = 0
+            dealer_wins = False
+            player_wins = False
             while continue_betting:
                 player_score = sum(self.card_value(card)
                                    for card in player_hand)
@@ -68,43 +71,43 @@ class BlackjackGame:
                 print("\n")
                 choice = input(
                     '["hit" for another card, "stay" to stop (no more cards)]:').lower()
-                if choice == "h" or choice == "hit":
+                if (action == "h" or action == "hit") or (choice == "h" or choice == "hit"):
                     new_card = the_deck.pop()
                     player_hand.append(new_card)
-                elif choice == "s" or choice == "stay":
+                elif (action == "s" or action == "stay") or (choice == "s" or choice == "stay"):
                     break
                 else:
                     print("Invalid choice. Please try again.")
                     continue
                 if player_score > 21:
-                    print("Dealer wins")
+                    self.who_wins("dealer")
                     self.player_chips -= bet
                     print(self.return_result(player_hand, dealer_hand,
-                          dealer_score, player_score, self.player_chips))
+                                             dealer_score, player_score))
             while dealer_score < 17:
                 new_card = the_deck.pop()
                 dealer_hand.append(new_card)
                 dealer_score += self.card_value(new_card)
-            print("\n")
+
             if player_score > 21:
-                print("Dealer wins")
+                self.who_wins("dealer")
                 self.player_chips -= bet
                 print(self.return_result(player_hand, dealer_hand,
-                      dealer_score, player_score, self.player_chips))
+                                         dealer_score, player_score))
             elif player_score == 21 and len(player_hand) == 2:
                 print("Player wins (<> <> <> Blackjack <> <> <> )")
                 self.player_chips += (bet * 1.5)
             elif dealer_score > 21 and player_score <= 21:
-                print("Player wins (Dealer Busts)")
+                self.who_wins("player")
                 self.player_chips += bet
             elif player_score > dealer_score:
-                print("Player Wins")
+                self.who_wins("player")
                 self.player_chips += bet
             elif dealer_score > player_score:
-                print("Dealer Wins")
+                self.who_wins("dealer")
                 self.player_chips -= bet
                 print(self.return_result(player_hand, dealer_hand,
-                      dealer_score, player_score, self.player_chips))
+                                         dealer_score, player_score))
             else:
                 print("Push. It is a tie (no one wins)")
             # Call game_loop() once after all conditions
@@ -112,19 +115,29 @@ class BlackjackGame:
                 print("You have no more chips to bet. Game Over.")
                 return
             print(self.return_result(player_hand, dealer_hand,
-                  dealer_score, player_score, self.player_chips))
+                                     dealer_score, player_score))
             self.game_loop()
 
-    def return_result(self, player_hand, dealer_hand, dealer_score, player_score, player_chips):
+    def who_wins(self, winner):
+        self.winner = winner
+        print(self.winner, "wins")
+
+    def return_result(self, player_hand, dealer_hand, dealer_score, player_score):
         return {
             'player_hand': player_hand,
             'dealer_hand': dealer_hand,
-            'dealer_score': dealer_score,
             'player_score': player_score,
-            'player_chips': player_chips,
+            'dealer_score': dealer_score,
+            'player_chips': self.player_chips,
+            'bet_amount': self.bet,
+            'winner': self.winner
         }
 
 
-if __name__ == '__main__':
+def main():
     game = BlackjackGame()
-    game.game_loop()
+    game.game_loop(10000)
+
+
+if __name__ == '__main__':
+    main()
