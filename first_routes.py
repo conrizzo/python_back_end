@@ -15,7 +15,7 @@ from limiter import limiter  # Import the limiter
 import storage_data  # Simply reads and writes to a file
 # This just runs a pre-trained sentence transformers cosine similarity model
 import cosine_similarity
-import blackjack_game.py  # This is a simple blackjack game
+import blackjack_game  # This is a simple blackjack game
 
 """
 off for now
@@ -89,21 +89,34 @@ def download_file():
     return send_file(path, as_attachment=True)
 
 
+""" This routes to a blackjack game I made to connect frontend and backend together as a game """
+
+
 @first_routes_bp.route('/backend/api/blackjack', methods=['POST'])
 @limiter.limit("10/2seconds")
 def blackjack():
     data = request.get_json()
-    action = data.get('action')
-    number = data.get('number', 0)  # Default to 0 if not provided
+    action, number = data.get('action'), data.get('number', 0)  # Default to 0 if not provided
 
-    if action == 'button1':
-        # Process button 1 action
-        return jsonify({'message': 'Button 1 processed', 'number': number})
-    elif action == 'button2':
-        # Process button 2 action
-        return jsonify({'message': 'Button 2 processed', 'number': number})
-    elif action == 'input':
-        # Process input action
-        return jsonify({'message': 'Bet', 'number': number})
+    response = {}  # Initialize an empty response object
+
+    if action == 'hit':
+        # Process 'hit' action from frontend BUTTON
+        game_result, message, player_hand, dealer_hand, player_chips = game_logic_hit()
+    elif action == 'stay':
+        # Process 'stay' action from frontend BUTTON
+        game_result, message, player_hand, dealer_hand, player_chips = game_logic_stay()
+    elif action == 'bet':
+        # Process 'bet' action from frontend BUTTON using FIELD: INTEGER
+        game_result, message, player_hand, dealer_hand, player_chips = game_logic_bet(
+            number)
     else:
         return jsonify({'error': 'Invalid action'}), 400
+
+    response["gameResult"] = game_result
+    response["message"] = message
+    response["playerHand"] = player_hand
+    response["dealerHand"] = dealer_hand
+    response["playerChips"] = player_chips
+
+    return jsonify(response)  # Return the response object
