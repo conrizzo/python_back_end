@@ -1,12 +1,19 @@
 import random
+# import redis
 
 
 class BlackjackGame:
     def __init__(self):
+        self.player_hand = []
+        self.dealer_hand = []
+        self.player_score = 0
+        self.dealer_score = 0
         self.player_chips = 10000
         self.bet = 0
         self.continue_betting = True
         self.deck = self.card_deck()
+        self.winner = None  # In reference to the player winning
+        self.deal_initial_hands()
 
     class card_deck:
         def __init__(self):
@@ -25,118 +32,134 @@ class BlackjackGame:
         else:
             return int(card[0])
 
-    def game_loop(self, user_bet_amount=0):
+    # this needs to be invoked from front end each action
+    def game_loop(self, bet=0):
         random.shuffle(self.deck.deck)
-
         if self.player_chips == 0:
             print("You have no more chips to bet. Game Over.")
             return
-
-        while True:
+        if self.winner != 'dealer':
             print("Player Chips:", self.player_chips)
-            try:
-                self.bet = int(input('Enter an amount to bet: '))
+            self.bet = bet  # Assuming bet is passed correctly and validation is handled elsewhere
+            self.result(self.deck.deck, self.bet, self.continue_betting)
 
-                if self.bet > self.player_chips:
-                    print(
-                        "You don't have enough chips to bet that amount. Please try again.")
-                else:
-                    self.result(self.deck.deck, self.bet,
-                                self.continue_betting)
-                continue  # Exit the loop if the input is successfully converted to an integer
-            except ValueError:
-                print("Error: Please enter an integer value for the bet.")
-                continue
-            else:
-                break
+    # Imagine a dealer is shuffling the deck and dealing the cards here ---
+    def deal_initial_hands(self):
+        random.shuffle(self.deck.deck)
+        self.player_hand = [self.deck.deck.pop(), self.deck.deck.pop()]
+        self.dealer_hand = [self.deck.deck.pop(), self.deck.deck.pop()]
+        self.player_score = sum(self.card_value(card)
+                                for card in self.player_hand)
+        self.dealer_score = sum(self.card_value(card)
+                                for card in self.dealer_hand)
 
-    def result(self, the_deck, bet, action, continue_betting=True):
-        while True:
-            player_hand = [the_deck.pop(), the_deck.pop()]
-            dealer_hand = [the_deck.pop(), the_deck.pop()]
-            player_score = 0
-            dealer_score = 0
-            dealer_wins = False
-            player_wins = False
-            while continue_betting:
-                player_score = sum(self.card_value(card)
-                                   for card in player_hand)
-                if 'ace' in [card[0] for card in player_hand] and player_score + 10 <= 21:
-                    player_score += 10
-                dealer_score = sum(self.card_value(card)
-                                   for card in dealer_hand)
-                print("Dealer First card:", dealer_hand[0])
-                print("Player Cards:", player_hand)
-                print("Player Total:", player_score)
-                print("\n")
-                choice = input(
-                    '["hit" for another card, "stay" to stop (no more cards)]:').lower()
-                if (action == "h" or action == "hit") or (choice == "h" or choice == "hit"):
-                    new_card = the_deck.pop()
-                    player_hand.append(new_card)
-                elif (action == "s" or action == "stay") or (choice == "s" or choice == "stay"):
-                    break
-                else:
-                    print("Invalid choice. Please try again.")
-                    continue
-                if player_score > 21:
-                    self.who_wins("dealer")
-                    self.player_chips -= bet
-                    print(self.return_result(player_hand, dealer_hand,
-                                             dealer_score, player_score))
-            while dealer_score < 17:
-                new_card = the_deck.pop()
-                dealer_hand.append(new_card)
-                dealer_score += self.card_value(new_card)
+    def get_action(self):
+        return self.action
 
-            if player_score > 21:
-                self.who_wins("dealer")
+    def set_action(self, action):
+        self.action = action
+        return self.action
+
+    def result(self, bet, continue_betting=True):
+        game_over = False
+        message = ""
+
+        action = self.get_action()
+
+        # Check for Ace adjustment before any action
+        if 'ace' in [card[0] for card in self.player_hand] and self.player_score + 10 <= 21:
+            self.player_score += 10
+
+        if action == "hit":
+            # Add a new card to the player's hand
+            new_card = self.deck.deck.pop()
+            self.player_hand.append(new_card)
+            # Recalculate player's score after adding the new card
+            self.player_score = sum(self.card_value(card)
+                                    for card in self.player_hand)
+            # Check if player busts after hitting
+            if self.player_score > 21:
+                game_over = True
+                message = "Bust! Dealer wins."
                 self.player_chips -= bet
-                print(self.return_result(player_hand, dealer_hand,
-                                         dealer_score, player_score))
-            elif player_score == 21 and len(player_hand) == 2:
-                print("Player wins (<> <> <> Blackjack <> <> <> )")
-                self.player_chips += (bet * 1.5)
-            elif dealer_score > 21 and player_score <= 21:
-                self.who_wins("player")
+        elif action == "stay":
+            # Process dealer's actions after player decides to stay
+            while self.dealer_score < 17:
+                new_card = self.deck.deck.pop()
+                self.dealer_hand.append(new_card)
+                self.dealer_score += self.card_value(new_card)
+            # Determine the outcome after both player and dealer have finished their actions
+            game_over = True
+            if self.dealer_score > 21 or self.player_score > self.dealer_score:
+                message = "Player wins!"
                 self.player_chips += bet
-            elif player_score > dealer_score:
-                self.who_wins("player")
-                self.player_chips += bet
-            elif dealer_score > player_score:
-                self.who_wins("dealer")
+            elif self.dealer_score > self.player_score:
+                message = "Dealer wins."
                 self.player_chips -= bet
-                print(self.return_result(player_hand, dealer_hand,
-                                         dealer_score, player_score))
             else:
-                print("Push. It is a tie (no one wins)")
-            # Call game_loop() once after all conditions
-            if self.player_chips == 0:
-                print("You have no more chips to bet. Game Over.")
-                return
-            print(self.return_result(player_hand, dealer_hand,
-                                     dealer_score, player_score))
-            self.game_loop()
+                message = "Push. It is a tie."
+
+        # Return game state and message for frontend to display
+        return self.return_result(message)
 
     def who_wins(self, winner):
         self.winner = winner
         print(self.winner, "wins")
 
-    def return_result(self, player_hand, dealer_hand, dealer_score, player_score):
-        return {
-            'player_hand': player_hand,
-            'dealer_hand': dealer_hand,
-            'player_score': player_score,
-            'dealer_score': dealer_score,
-            'player_chips': self.player_chips,
-            'bet_amount': self.bet,
-            'winner': self.winner
+    def return_result(self, message):
+        # handles missing or optional data
+        game_state = {
+            'player_hand': self.player_hand or "",
+            'dealer_hand': self.dealer_hand or "",
+            'player_score': self.player_score or "",
+            'dealer_score': self.dealer_score or "",
+            'player_chips': self.player_chips or "",
+            "message": message,
+            'bet_amount': self.bet or "",
+            'winner': self.winner or "",
+
         }
+        # Serialize the dictionary to a JSON string
+
+        # game_state_json = json.dumps(game_state)
+
+        # Store the JSON string in Redis, using a unique key for the game state
+        # blackjack_redis_client.set('game_state_key', game_state_json)
+        return game_state
+
+
+def test_blackjack_games(num_games, bet_amount):
+    game = BlackjackGame()
+    for _ in range(num_games):
+        # Reset and shuffle the deck
+
+        while True:
+            print("Dealer's First Card:", game.dealer_hand[0])
+            print("Player's Hand:", game.player_hand)
+            print("Player's Score:", game.player_score)
+
+            action = input("Player action (hit/stay): ").lower()
+            if action not in ['hit', 'stay']:
+                print("Invalid action. Please type 'hit' or 'stay'.")
+                continue
+
+            # Assuming get_or_set_action correctly updates the game state with the new action
+            game.set_action(action)
+
+            # Process the action and get the result
+            result = game.result(bet_amount)
+            print(result)
+            print(f"Final chip count: {game.player_chips}")
+
+
+# Example usage
+test_blackjack_games(2, 100)
 
 
 def main():
-    game = BlackjackGame()
-    game.game_loop(10000)
+    # game = BlackjackGame()
+    # game.game_loop(10000)
+    test_blackjack_games(10, 100)
 
 
 if __name__ == '__main__':

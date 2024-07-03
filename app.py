@@ -12,8 +12,8 @@ from authorization import authorization_bp
 from messages import messages_bp
 from first_routes import first_routes_bp
 
-# rate limiter using redis
-from limiter import limiter, RateLimitExceeded
+# Note: The limiter has both Reddis address and the blackjack Redis address
+from limiter import limiter, RateLimitExceeded, redis_address_blackjack
 from flask import Flask
 from datetime import timedelta
 # websockets
@@ -51,6 +51,8 @@ def create_app():
     app.config.update(
         SECRET_KEY=SECRET_KEY,
         RATELIMIT_STORAGE_URL=redis_address,
+        # Specific Redis address for blackjack
+        BLACKJACK_REDIS_URL=redis_address_blackjack,
         POSTGRESQL_URI=postgresql_address,
         JWT_SECRET_KEY=JWT_KEY,
         JWT_COOKIE_SECURE=True,

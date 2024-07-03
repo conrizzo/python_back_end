@@ -1,5 +1,6 @@
 
 from config import redis_client, Redis, RedisError
+import redis
 
 # Required imports
 from datetime import datetime, timedelta, timezone
@@ -96,32 +97,44 @@ def download_file():
 @limiter.limit("10/2seconds")
 def blackjack():
     data = request.get_json()
-    start, action, number = data.get('start_game'), data.get(
-        'user_action'), data.get('bet_amount', 0)
+    action = data.get('action')
+    bet_amount = data.get('bet_amount', 0)
+    response = {}
 
-    blackjack_game.main()  # Initialize the deck
-
-    response = {}  # Initialize an empty response object
-
-    if start_game == 'start':
-        # Process 'start' action from frontend BUTTON
-        game_result, message, player_hand, dealer_hand, player_chips = blackjack_game.start_game(
-            number)
-
-    if action == 'hit':
-        # Process 'hit' action from frontend BUTTON
-
+    if action == 'start':
+        # Initialize the game, shuffle the deck, etc.
+        blackjack_game.main()
+        response['message'] = 'Game started'
+        # Add more game initialization logic here
+    elif action == 'bet':
+        if self.player_chips > 0:
+            # Process the bet
+            response['message'] = f'Bet of {bet_amount} placed'
+            # Add more bet handling logic here
+        else:
+            return jsonify({"message": "Insufficient chips", "inputRequired": True}), 400
+    elif action == 'hit':
+        # Process the hit action
+        response['message'] = 'Hit action processed'
+        # Add more hit handling logic here
     elif action == 'stay':
-        # Process 'stay' action from frontend BUTTON
-
+        # Process the stay action
+        response['message'] = 'Stay action processed'
+        # Add more stay handling logic here
     else:
         return jsonify({'error': 'Invalid action'}), 400
 
-    game_state = blackjack_game.return_result(
-        player_hand, dealer_hand, player_score, dealer_score, player_chips)
+    game_state_json_retrieved = blackjack_redis_client.get('game_state_key')
+    if game_state_json_retrieved:
+        game_state_retrieved = json.loads(game_state_json_retrieved)
+        player_hand = game_state_retrieved['player_hand']
+        dealer_hand = game_state_retrieved['dealer_hand']
+        dealer_score = game_state_retrieved['dealer_score']
+        player_score = game_state_retrieved['player_score']
+        player_chips = game_state_retrieved['player_chips']
+        game_result = game_state_retrieved['winner']
 
     response["gameResult"] = game_result
-    response["message"] = message
     response["playerHand"] = player_hand
     response["dealerScore"] = dealer_score
     response["dealerHand"] = dealer_hand
