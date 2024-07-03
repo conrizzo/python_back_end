@@ -8,12 +8,11 @@ class BlackjackGame:
         self.dealer_hand = []
         self.player_score = 0
         self.dealer_score = 0
-        self.player_chips = 10000
+        self.player_chips = 0
         self.bet = 0
         self.continue_betting = True
         self.deck = self.card_deck()
         self.winner = None  # In reference to the player winning
-        self.deal_initial_hands()
 
     class card_deck:
         def __init__(self):
@@ -63,7 +62,6 @@ class BlackjackGame:
     def result(self, bet, continue_betting=True):
         game_over = False
         message = ""
-
         action = self.get_action()
 
         # Check for Ace adjustment before any action
@@ -128,17 +126,27 @@ class BlackjackGame:
         return game_state
 
 
-def test_blackjack_games(num_games, bet_amount):
+def test_blackjack_games(num_games):
     game = BlackjackGame()
+    game.player_chips = 10000
+
     for _ in range(num_games):
         # Reset and shuffle the deck
 
+        game.deal_initial_hands()
+        print("Player Chips:", game.player_chips)
+        bet = int(input("Amount to bet: "))
         while True:
+            print("Player Chips:", game.player_chips)
+
+            print(bet)
+
             print("Dealer's First Card:", game.dealer_hand[0])
             print("Player's Hand:", game.player_hand)
             print("Player's Score:", game.player_score)
 
             action = input("Player action (hit/stay): ").lower()
+
             if action not in ['hit', 'stay']:
                 print("Invalid action. Please type 'hit' or 'stay'.")
                 continue
@@ -147,19 +155,23 @@ def test_blackjack_games(num_games, bet_amount):
             game.set_action(action)
 
             # Process the action and get the result
-            result = game.result(bet_amount)
+            result = game.result(bet)
             print(result)
+            print(result['player_score'])
+            print(result['dealer_score'])
             print(f"Final chip count: {game.player_chips}")
+            if result['message'] != '':
+                break
 
 
 # Example usage
-test_blackjack_games(2, 100)
+test_blackjack_games(2)
 
 
 def main():
     # game = BlackjackGame()
     # game.game_loop(10000)
-    test_blackjack_games(10, 100)
+    test_blackjack_games(10)
 
 
 if __name__ == '__main__':
