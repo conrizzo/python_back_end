@@ -1,9 +1,17 @@
 import random
-# import redis
+import json
+import redis
 
 
 class BlackjackGame:
+
     def __init__(self):
+        if state:
+            self.load_state(state)
+        else:
+            self.initialize_new_game()
+
+    def initialize_new_game(self):
         self.player_hand = []
         self.dealer_hand = []
         self.player_score = 0
@@ -13,6 +21,34 @@ class BlackjackGame:
         self.continue_betting = True
         self.deck = self.card_deck()
         self.winner = None  # In reference to the player winning
+        self.message = ""
+
+    def load_state(self, state):
+        self.player_hand = state.get('player_hand', [])
+        self.dealer_hand = state.get('dealer_hand', [])
+        self.player_score = state.get('player_score', 0)
+        self.dealer_score = state.get('dealer_score', 0)
+        self.player_chips = state.get('player_chips', 0)
+        self.bet = state.get('bet', 0)
+        self.continue_betting = state.get('continue_betting', True)
+        # Ensure deck is properly initialized
+        self.deck = state.get('deck', self.card_deck())
+        self.winner = state.get('winner')
+        self.message = state.get('message')
+
+    def serialize_state(self):
+        return {
+            'player_hand': self.player_hand,
+            'dealer_hand': self.dealer_hand,
+            'player_score': self.player_score,
+            'dealer_score': self.dealer_score,
+            'player_chips': self.player_chips,
+            'bet': self.bet,
+            'continue_betting': self.continue_betting,
+            'deck': self.deck.deck,
+            'winner': self.winner,
+            'message': self.message or '',
+        }
 
     class card_deck:
         def __init__(self):
@@ -60,10 +96,11 @@ class BlackjackGame:
         return self.action
 
     def result(self, bet, continue_betting=True):
-        game_over = False
+
         message = ""
         action = self.get_action()
-
+        print("action:", action)
+        self.serialize_state()
         # Check for Ace adjustment before any action
         if 'ace' in [card[0] for card in self.player_hand] and self.player_score + 10 <= 21:
             self.player_score += 10
@@ -77,28 +114,41 @@ class BlackjackGame:
                                     for card in self.player_hand)
             # Check if player busts after hitting
             if self.player_score > 21:
-                game_over = True
-                message = "Bust! Dealer wins."
+
+                self.message = "Bust! Dealer wins."
                 self.player_chips -= bet
+                self.serialize_state()
+
         elif action == "stay":
             # Process dealer's actions after player decides to stay
+
             while self.dealer_score < 17:
                 new_card = self.deck.deck.pop()
                 self.dealer_hand.append(new_card)
                 self.dealer_score += self.card_value(new_card)
+                self.serialize_state()
             # Determine the outcome after both player and dealer have finished their actions
-            game_over = True
-            if self.dealer_score > 21 or self.player_score > self.dealer_score:
-                message = "Player wins!"
+
+            if self.player_score == 21 and len(self.player_hand) == 2:
+                if self.dealer_score == 21 and len(self.dealer_hand) == 2:
+                    self.message = "Push. It is a tie."
+                else:
+                    self.message = "Blackjack! Player wins!"
+                    self.player_chips += bet * 1.5
+            elif self.dealer_score > 21 or self.player_score > self.dealer_score:
+                self.message = "Player wins!"
                 self.player_chips += bet
             elif self.dealer_score > self.player_score:
-                message = "Dealer wins."
+                self.message = "Dealer wins."
                 self.player_chips -= bet
             else:
-                message = "Push. It is a tie."
+                self.message = "Push. It is a tie."
+            self.serialize_state()
 
+        self.serialize_state()
         # Return game state and message for frontend to display
-        return self.return_result(message)
+        # return self.serialize_state()
+        # return self.return_result(message)
 
     def who_wins(self, winner):
         self.winner = winner
@@ -107,18 +157,17 @@ class BlackjackGame:
     def return_result(self, message):
         # handles missing or optional data
         game_state = {
+            'deck': self.deck,
             'player_hand': self.player_hand or "",
             'dealer_hand': self.dealer_hand or "",
             'player_score': self.player_score or "",
             'dealer_score': self.dealer_score or "",
-            'player_chips': self.player_chips or "",
+            'player_chips': self.player_chips or 0,
             "message": message,
             'bet_amount': self.bet or "",
             'winner': self.winner or "",
-
         }
         # Serialize the dictionary to a JSON string
-
         # game_state_json = json.dumps(game_state)
 
         # Store the JSON string in Redis, using a unique key for the game state
@@ -126,52 +175,67 @@ class BlackjackGame:
         return game_state
 
 
-def test_blackjack_games(num_games):
+def test_blackjack_games(chips):
     game = BlackjackGame()
-    game.player_chips = 10000
+    game.player_chips = chips
+    game.deal_initial_hands()
+    print("Player Chips:", game.player_chips)
+    bet = int(input("Amount to bet: "))
 
-    for _ in range(num_games):
-        # Reset and shuffle the deck
+    ## the front end will make these queries ##
+    player_stayed_flag = False
+    while True:
+        # print(game.deck.deck)
 
-        game.deal_initial_hands()
-        print("Player Chips:", game.player_chips)
-        bet = int(input("Amount to bet: "))
-        while True:
-            print("Player Chips:", game.player_chips)
+        state = game.serialize_state()
+        # Serialize the state to a JSON string
+        state_json = json.dumps(state)
 
-            print(bet)
+        # print(state_json)
+        # Save the JSON string to a file
 
-            print("Dealer's First Card:", game.dealer_hand[0])
-            print("Player's Hand:", game.player_hand)
-            print("Player's Score:", game.player_score)
+        print("Player Chips:", state['player_chips'])
 
+        print(bet)
+
+        print("Dealer's First Card:", state['dealer_hand'][0])
+        print("Player's Hand:", state['player_hand'])
+        print("Player's Score:", state['player_score'])
+        # print("state", state)
+        # Check if the player has not stayed yet
+        if not player_stayed_flag and state['player_score'] <= 21:
             action = input("Player action (hit/stay): ").lower()
-
             if action not in ['hit', 'stay']:
                 print("Invalid action. Please type 'hit' or 'stay'.")
                 continue
-
-            # Assuming get_or_set_action correctly updates the game state with the new action
             game.set_action(action)
+            if action == 'stay':
+                player_stayed_flag = True  # Set the flag if the player chooses to stay
 
-            # Process the action and get the result
-            result = game.result(bet)
-            print(result)
-            print(result['player_score'])
-            print(result['dealer_score'])
-            print(f"Final chip count: {game.player_chips}")
-            if result['message'] != '':
-                break
+        # Process the action and get the result
+        game.result(bet)  # play hand
+        print(state['message'])
+        print(state['player_score'])
+        print(state['dealer_score'])
+
+        print(f"Final chip count: {state['player_chips']}")
+
+        if int(state['player_chips']) <= 0:
+            test_blackjack_games(11000)  # new game
+
+        if state['message'] != '':
+            break
+
+    test_blackjack_games(state['player_chips'])
 
 
 # Example usage
-test_blackjack_games(2)
 
 
 def main():
     # game = BlackjackGame()
     # game.game_loop(10000)
-    test_blackjack_games(10)
+    test_blackjack_games(10000)
 
 
 if __name__ == '__main__':

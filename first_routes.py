@@ -90,6 +90,15 @@ def download_file():
     return send_file(path, as_attachment=True)
 
 
+@first_routes_bp.route('/backend/api/blackjack/reset', methods=['POST'])
+def reset_game_state():
+    initial_game_state = {}
+    # Save the initial game state to Redis
+    blackjack_redis_client.set(
+        'game_state_key', json.dumps(initial_game_state))
+    return jsonify({"message": "Game state reset successfully"}), 200
+
+
 """ This routes to a blackjack game I made to connect frontend and backend together as a game """
 
 
@@ -97,48 +106,47 @@ def download_file():
 @limiter.limit("10/2seconds")
 def blackjack():
     data = request.get_json()
-    action = data.get('action')
-    bet_amount = data.get('bet_amount', 0)
-    response = {}
+    action = data.get('action')  # get front end action 'hit' or 'stay'
+    bet_amount = data.get('bet_amount', 0)  # get front end bet amount
+
+    game_state_json = blackjack_redis_client.get('game_state_key')
+    if game_state_json:
+        game_state = json.loads(game_state_json)
+    else:
+        game_state = {}  # Example initial state
+
+    game = blackjack_game.BlackjackGame(state=game_state)
+    game.player_chips = game_state['player_chips']
 
     if action == 'start':
-        # Initialize the game, shuffle the deck, etc.
-        blackjack_game.main()
-        response['message'] = 'Game started'
-        # Add more game initialization logic here
+        game_state['message'] = 'Game started'
+        game.player_chips = 10000  # set the player chips
+        game.deal_initial_hands()  # deal the initial hands
+        # game state would be using the reddis values
+
     elif action == 'bet':
-        if self.player_chips > 0:
-            # Process the bet
-            response['message'] = f'Bet of {bet_amount} placed'
-            # Add more bet handling logic here
+        game.load_state(game_state)
+        if game.player_chips >= bet_amount:
+            game.result(bet_amount)
+            game_state['player_chips'] = game.player_chips
+            game_state['message'] = f'Bet of {bet_amount} placed'
+
         else:
-            return jsonify({"message": "Insufficient chips", "inputRequired": True}), 400
+            return jsonify({"message": "Insufficient chips"}), 400
     elif action == 'hit':
-        # Process the hit action
-        response['message'] = 'Hit action processed'
-        # Add more hit handling logic here
+        game.set_action(action)
+        game_state['message'] = 'Hit action processed'
+        game.load_state(game_state)
+
     elif action == 'stay':
-        # Process the stay action
-        response['message'] = 'Stay action processed'
-        # Add more stay handling logic here
+        game.set_action(action)
+        game.result(bet_amount)
+        game_state['message'] = 'Stay action processed'
+        game.load_state(game_state)
+
     else:
         return jsonify({'error': 'Invalid action'}), 400
+    game_state.update(game.serialize_state())
+    blackjack_redis_client.set('game_state_key', json.dumps(game_state))
 
-    game_state_json_retrieved = blackjack_redis_client.get('game_state_key')
-    if game_state_json_retrieved:
-        game_state_retrieved = json.loads(game_state_json_retrieved)
-        player_hand = game_state_retrieved['player_hand']
-        dealer_hand = game_state_retrieved['dealer_hand']
-        dealer_score = game_state_retrieved['dealer_score']
-        player_score = game_state_retrieved['player_score']
-        player_chips = game_state_retrieved['player_chips']
-        game_result = game_state_retrieved['winner']
-
-    response["gameResult"] = game_result
-    response["playerHand"] = player_hand
-    response["dealerScore"] = dealer_score
-    response["dealerHand"] = dealer_hand
-    response["playerScore"] = player_score
-    response["playerChips"] = player_chips
-
-    return jsonify(response)  # Return the response object
+    return jsonify(game_state)
