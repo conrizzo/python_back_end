@@ -12,7 +12,8 @@ import socket
 from flask import Blueprint, current_app
 
 # Extra Files for this page to use with the routes
-from limiter import limiter  # Import the limiter
+# Import the limiter and blackjack game reddis
+from limiter import limiter, blackjack_redis_client
 import storage_data  # Simply reads and writes to a file
 # This just runs a pre-trained sentence transformers cosine similarity model
 import cosine_similarity
@@ -92,11 +93,38 @@ def download_file():
 
 @first_routes_bp.route('/backend/api/blackjack/reset', methods=['POST'])
 def reset_game_state():
-    initial_game_state = {}
-    # Save the initial game state to Redis
+    game_state_json = blackjack_redis_client.get('game_state_key')
+    if game_state_json:
+        game_state = json.loads(game_state_json)
+        player_chips = game_state.get('player_chips', 0)
+        # Create a new game state with only player_chips to ensure they persist
+        updated_game_state = {'player_chips': player_chips}
+    else:
+        # If there's no game state, initialize player_chips to a default value
+        updated_game_state = {'player_chips': 10000}  # Default starting chips
+
+    # Save the updated game state to Redis
     blackjack_redis_client.set(
-        'game_state_key', json.dumps(initial_game_state))
+        'game_state_key', json.dumps(updated_game_state))
     return jsonify({"message": "Game state reset successfully"}), 200
+
+
+@first_routes_bp.route('/backend/api/blackjack/gamestate', methods=['POST'])
+@limiter.limit("10/2seconds")
+def read_game_state():
+    game_state_json = blackjack_redis_client.get('game_state_key')
+    if game_state_json:
+        game_state = json.loads(game_state_json)
+    else:
+        game_state = {}
+    return game_state
+
+
+def set_game_state(blackjack_redis_client, game):
+    game_state = game.serialize_state()
+    game_state_json = json.dumps(game_state)
+    blackjack_redis_client.set('game_state_key', game_state_json)
+    return blackjack_redis_client.get('game_state_key').decode('utf-8')
 
 
 """ This routes to a blackjack game I made to connect frontend and backend together as a game """
@@ -110,43 +138,55 @@ def blackjack():
     bet_amount = data.get('bet_amount', 0)  # get front end bet amount
 
     game_state_json = blackjack_redis_client.get('game_state_key')
+    game = blackjack_game.BlackjackGame()
+
     if game_state_json:
         game_state = json.loads(game_state_json)
+        game.load_state(game_state)
     else:
         game_state = {}  # Example initial state
+        game.player_chips = 10000
+        set_game_state(blackjack_redis_client, game)
 
-    game = blackjack_game.BlackjackGame(state=game_state)
-    game.player_chips = game_state['player_chips']
+    # game.player_chips = game_state['player_chips']
 
     if action == 'start':
         game_state['message'] = 'Game started'
-        game.player_chips = 10000  # set the player chips
         game.deal_initial_hands()  # deal the initial hands
+        # game.serialize_state()
+        if game.player_chips <= 0:
+            game.player_chips = 10000
+        set_game_state(blackjack_redis_client, game)
+
         # game state would be using the reddis values
 
     elif action == 'bet':
-        game.load_state(game_state)
+        # set_game_state(blackjack_redis_client, game)
         if game.player_chips >= bet_amount:
-            game.result(bet_amount)
-            game_state['player_chips'] = game.player_chips
-            game_state['message'] = f'Bet of {bet_amount} placed'
-
+            game.bet = bet_amount  # set bet amount
+            # game_state['message'] = f'Bet of {bet_amount} placed'
+            # game.result(bet_amount)
+            set_game_state(blackjack_redis_client, game)
         else:
             return jsonify({"message": "Insufficient chips"}), 400
+
     elif action == 'hit':
         game.set_action(action)
         game_state['message'] = 'Hit action processed'
-        game.load_state(game_state)
-
+        game.result(bet_amount)
+        # game.load_state(game_state)
+        set_game_state(blackjack_redis_client, game)
     elif action == 'stay':
         game.set_action(action)
+        game_state['continue_betting'] = False
         game.result(bet_amount)
         game_state['message'] = 'Stay action processed'
-        game.load_state(game_state)
 
+        # game.load_state(game_state)
+        set_game_state(blackjack_redis_client, game)
     else:
         return jsonify({'error': 'Invalid action'}), 400
-    game_state.update(game.serialize_state())
-    blackjack_redis_client.set('game_state_key', json.dumps(game_state))
 
-    return jsonify(game_state)
+    # set_game_state(blackjack_redis_client, game)
+
+    return jsonify(set_game_state(blackjack_redis_client, game))

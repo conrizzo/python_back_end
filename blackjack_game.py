@@ -1,11 +1,11 @@
 import random
 import json
-import redis
+# import redis
 
 
 class BlackjackGame:
 
-    def __init__(self):
+    def __init__(self, state=None):
         if state:
             self.load_state(state)
         else:
@@ -32,7 +32,11 @@ class BlackjackGame:
         self.bet = state.get('bet', 0)
         self.continue_betting = state.get('continue_betting', True)
         # Ensure deck is properly initialized
-        self.deck = state.get('deck', self.card_deck())
+        deck_data = state.get('deck', None)
+        if deck_data is not None and isinstance(deck_data, list):
+            self.deck = self.card_deck(deck_data)
+        else:
+            self.deck = self.card_deck()
         self.winner = state.get('winner')
         self.message = state.get('message')
 
@@ -51,12 +55,15 @@ class BlackjackGame:
         }
 
     class card_deck:
-        def __init__(self):
+        def __init__(self, deck=None):
             self.card_categories = ['hearts', 'diamonds', 'clubs', 'spades']
             self.cards_list = ["2", "3", "4", "5", "6", "7",
                                "8", "9", "10", "jack", "queen", "king", "ace"]
-            self.deck = [([card, category])
-                         for category in self.card_categories for card in self.cards_list]
+            if deck is None:
+                self.deck = [([card, category])
+                             for category in self.card_categories for card in self.cards_list]
+            else:
+                self.deck = deck
 
     @staticmethod
     def card_value(card):
@@ -67,18 +74,8 @@ class BlackjackGame:
         else:
             return int(card[0])
 
-    # this needs to be invoked from front end each action
-    def game_loop(self, bet=0):
-        random.shuffle(self.deck.deck)
-        if self.player_chips == 0:
-            print("You have no more chips to bet. Game Over.")
-            return
-        if self.winner != 'dealer':
-            print("Player Chips:", self.player_chips)
-            self.bet = bet  # Assuming bet is passed correctly and validation is handled elsewhere
-            self.result(self.deck.deck, self.bet, self.continue_betting)
-
     # Imagine a dealer is shuffling the deck and dealing the cards here ---
+
     def deal_initial_hands(self):
         random.shuffle(self.deck.deck)
         self.player_hand = [self.deck.deck.pop(), self.deck.deck.pop()]
@@ -117,6 +114,8 @@ class BlackjackGame:
 
                 self.message = "Bust! Dealer wins."
                 self.player_chips -= bet
+                # disallow more hitting or bets with FALSE below
+                game_state['continue_betting'] = False
                 self.serialize_state()
 
         elif action == "stay":
@@ -146,32 +145,10 @@ class BlackjackGame:
             self.serialize_state()
 
         self.serialize_state()
-        # Return game state and message for frontend to display
-        # return self.serialize_state()
-        # return self.return_result(message)
 
     def who_wins(self, winner):
         self.winner = winner
         print(self.winner, "wins")
-
-    def return_result(self, message):
-        # handles missing or optional data
-        game_state = {
-            'deck': self.deck,
-            'player_hand': self.player_hand or "",
-            'dealer_hand': self.dealer_hand or "",
-            'player_score': self.player_score or "",
-            'dealer_score': self.dealer_score or "",
-            'player_chips': self.player_chips or 0,
-            "message": message,
-            'bet_amount': self.bet or "",
-            'winner': self.winner or "",
-        }
-        # Serialize the dictionary to a JSON string
-        # game_state_json = json.dumps(game_state)
-
-        # Store the JSON string in Redis, using a unique key for the game state
-        # blackjack_redis_client.set('game_state_key', game_state_json)
         return game_state
 
 
@@ -229,12 +206,8 @@ def test_blackjack_games(chips):
     test_blackjack_games(state['player_chips'])
 
 
-# Example usage
-
-
 def main():
     # game = BlackjackGame()
-    # game.game_loop(10000)
     test_blackjack_games(10000)
 
 
