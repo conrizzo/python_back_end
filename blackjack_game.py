@@ -75,7 +75,6 @@ class BlackjackGame:
             return int(card[0])
 
     # Imagine a dealer is shuffling the deck and dealing the cards here ---
-
     def deal_initial_hands(self):
         random.shuffle(self.deck.deck)
         self.player_hand = [self.deck.deck.pop(), self.deck.deck.pop()]
@@ -92,15 +91,18 @@ class BlackjackGame:
         self.action = action
         return self.action
 
-    def result(self, bet, continue_betting=True):
+    def result(self, bet):
+        if self.continue_betting is False:
+            return
 
         message = ""
         action = self.get_action()
-        print("action:", action)
         self.serialize_state()
-        # Check for Ace adjustment before any action
+        # Check for Ace adjustment before any action for player and dealer
         if 'ace' in [card[0] for card in self.player_hand] and self.player_score + 10 <= 21:
             self.player_score += 10
+        if 'ace' in [card[0] for card in self.dealer_hand] and self.dealer_score + 10 < 17:
+            self.dealer_score += 10
 
         if action == "hit":
             # Add a new card to the player's hand
@@ -111,23 +113,20 @@ class BlackjackGame:
                                     for card in self.player_hand)
             # Check if player busts after hitting
             if self.player_score > 21:
-
                 self.message = "Bust! Dealer wins."
                 self.player_chips -= bet
                 # disallow more hitting or bets with FALSE below
-                game_state['continue_betting'] = False
+                self.continue_betting = False
                 self.serialize_state()
 
         elif action == "stay":
-            # Process dealer's actions after player decides to stay
-
             while self.dealer_score < 17:
                 new_card = self.deck.deck.pop()
                 self.dealer_hand.append(new_card)
                 self.dealer_score += self.card_value(new_card)
+                if 'ace' in [card[0] for card in self.dealer_hand] and self.dealer_score + 10 < 17:
+                    self.dealer_score += 10
                 self.serialize_state()
-            # Determine the outcome after both player and dealer have finished their actions
-
             if self.player_score == 21 and len(self.player_hand) == 2:
                 if self.dealer_score == 21 and len(self.dealer_hand) == 2:
                     self.message = "Push. It is a tie."
@@ -142,14 +141,16 @@ class BlackjackGame:
                 self.player_chips -= bet
             else:
                 self.message = "Push. It is a tie."
+            self.continue_betting = False
             self.serialize_state()
-
-        self.serialize_state()
 
     def who_wins(self, winner):
         self.winner = winner
         print(self.winner, "wins")
         return game_state
+
+
+""" Everything below this is only for testing purposes """
 
 
 def test_blackjack_games(chips):
