@@ -137,10 +137,14 @@ def set_game_state(blackjack_redis_client, game):
 @first_routes_bp.route('/backend/api/blackjack', methods=['POST'])
 @limiter.limit("10/2seconds")
 def blackjack():
-    data = request.get_json()
-    action = data.get('action')  # get front end action 'hit' or 'stay'
-    bet_amount = data.get('bet_amount', 0)  # get front end bet amount
 
+    # Get data from front end query
+    data = request.get_json()
+    action = data.get('action')
+    bet_amount = data.get('bet_amount', 0)
+    split = data.get('split', False)
+
+    # Get the game state from Redis and always initialize a new game class based on the game state
     game_state_json = blackjack_redis_client.get('game_state_key')
     game = blackjack_game.BlackjackGame()
 
@@ -148,7 +152,7 @@ def blackjack():
         game_state = json.loads(game_state_json)
         game.load_state(game_state)
     else:
-        game_state = {}  # Example initial state
+        game_state = {}
         game.player_chips = 10000
         set_game_state(blackjack_redis_client, game)
 
@@ -159,33 +163,35 @@ def blackjack():
         else:
             return False
 
-    if action == 'start':
+    game_state.setdefault('continue_betting', False)
+
+    if split:
+        game.set_action(split)
+        game.result(game_state['bet'])
+        game.player_hand = game.split_player_hand
+        set_game_state(blackjack_redis_client, game)
+    elif action == 'start':
+        return jsonify(game_state['player_chips'])
+    # All this does is deal the hands, initial 2 cards for player and dealer
+    elif action == 'deal':
+        game.bet = bet_amount
         if confirm_bet() == False:
             return jsonify({"message": "Insufficient chips"}), 400
-
-        # game.serialize_state()
-        # game state would be using the reddis values
-        """
-            elif action == 'bet':      
-                if game.player_chips >= bet_amount:
-                    game.bet = bet_amount  # set bet amount       
-                    set_game_state(blackjack_redis_client, game)
-                else:
-                    return jsonify({"message": "Insufficient chips"}), 400
-        """
-    elif action == 'deal':
-        game.deal_initial_hands()  # deal the initial hands
+        game.deal_initial_hands()
         game_state['continue_betting'] = True
+        # split
+        if game.card_value(game.player_hand[0]) == game.card_value(game.player_hand[1]) and len(game.player_hand) == 2:
+            game_state = {"message": "Do you want to split?"}
 
-    if game_state['continue_betting']:
+        set_game_state(blackjack_redis_client, game)
+    elif game_state['continue_betting']:
         if action == 'hit':
             game.set_action(action)
-            game.result(bet_amount)
-
+            game.result(game_state['bet'])
             set_game_state(blackjack_redis_client, game)
         elif action == 'stay':
             game.set_action(action)
-            game.result(bet_amount)
+            game.result(game_state['bet'])
             game_state['continue_betting'] = False
             set_game_state(blackjack_redis_client, game)
     else:
