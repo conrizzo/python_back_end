@@ -77,7 +77,7 @@ class BlackjackGame:
         if card[0] in ['jack', 'queen', 'king']:
             return 10
         elif card[0] == 'ace':
-            return 1
+            return 11  # Adjusted to return 11 for Aces
         else:
             return int(card[0])
 
@@ -88,10 +88,19 @@ class BlackjackGame:
         random.shuffle(self.deck.deck)
         self.player_hand = [self.deck.deck.pop(), self.deck.deck.pop()]
         self.dealer_hand = [self.deck.deck.pop(), self.deck.deck.pop()]
-        self.player_score = sum(self.card_value(card)
-                                for card in self.player_hand)
-        self.dealer_score = sum(self.card_value(card)
-                                for card in self.dealer_hand)
+        # Use calculate_aces to adjust scores dynamically
+        self.player_score = self.calculate_aces(self.player_hand)
+        self.dealer_score = self.calculate_aces(self.dealer_hand)
+
+    def calculate_aces(self, hand):
+        score = sum(self.card_value(card) for card in hand)
+        aces_count = sum(1 for card in hand if self.card_value(card) == 11)
+
+        while score > 21 and aces_count > 0:
+            score -= 10
+            aces_count -= 1
+
+        return score
 
     def get_action(self):
         return self.action
@@ -107,11 +116,11 @@ class BlackjackGame:
             self.set_action("stay")
             self.continue_betting = True
             self.player_score = self.split_player_scores[iteration_counter]
-            self.player_hand = i 
+            self.player_hand = i
             self.result(self.bet)  # run evaluation
             split_player_hand.extend(i)
             self.split_player_hand = split_player_hand
-            iteration_counter+=1
+            iteration_counter += 1
 
     def result(self, bet):
         if self.continue_betting is False:  # if the player has already stayed or busted
@@ -144,13 +153,11 @@ class BlackjackGame:
                 # Recalculate scores for both hands (if needed)
                 # This is a placeholder; actual implementation depends on how you want to handle scores for split hands
                 # 11 is to account for the value of an ace
-                self.split_player_scores = [sum(self.card_value(card) + 10 if self.card_value(card) == 1 else self.card_value(card) for card in hand_one),
-                                            sum(self.card_value(card) + 10 if self.card_value(card) == 1 else self.card_value(card) for card in hand_two)]
+                self.split_player_scores = [self.calculate_aces(
+                    hand_one), self.calculate_aces(hand_two)]
 
                 self.process_hands_for_split()
-                # Note: You might need to adjust the rest of your game logic to handle multiple hands in self.player_hands
             else:
-                # Handle the case where the player cannot split (e.g., different cards or more than two cards)
                 pass
         elif self.get_action() == "hit":
             # Add a new card to the player's hand
@@ -166,14 +173,7 @@ class BlackjackGame:
             #   self.player_score += 10
 
             # Correcting the logic to handle aces when the player's score is over 21
-            while self.player_score > 21 and 'ace' in [card[0] for card in self.player_hand]:
-                for i, card in enumerate(self.player_hand):
-                    # Check if the card is an ace and if changing its value from 11 to 1 helps
-                    if card[0] == 'ace':
-                        self.player_score -= 10  # Adjusting the ace's value from 11 to 1
-                        # Mark the ace as adjusted
-                        self.player_hand[i] = ('ace_adjusted', card[1])
-                        break
+            self.calculate_aces(self.player_hand)
 
             # Check if player busts after hitting
             if self.player_score > 21:
@@ -188,13 +188,7 @@ class BlackjackGame:
                 new_card = self.deck.deck.pop()
                 self.dealer_hand.append(new_card)
                 self.dealer_score += self.card_value(new_card)
-                if 'ace' in [card[0] for card in self.dealer_hand]:
-                    adjusted_score = self.dealer_score
-                    for card in self.dealer_hand:
-                        if card[0] == 'ace' and adjusted_score + 10 <= 21:
-                            adjusted_score += 10
-                            break
-                    self.dealer_score = adjusted_score
+                self.dealer_score = self.calculate_aces(self.dealer_hand)
                 self.serialize_state()
 
             if self.player_score == 21 and len(self.player_hand) == 2:

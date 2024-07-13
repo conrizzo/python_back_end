@@ -182,7 +182,11 @@ def blackjack():
         # split
         if game.card_value(game.player_hand[0]) == game.card_value(game.player_hand[1]) and len(game.player_hand) == 2:
             game_state = {"message": "Do you want to split?"}
-
+        # Reach conclusion if player has blackjack
+        if game.player_score == 21:
+            game.set_action('stay')
+            game.result(game_state['bet'])
+            game_state['continue_betting'] = False
         set_game_state(blackjack_redis_client, game)
     elif game_state['continue_betting']:
         if action == 'hit':
