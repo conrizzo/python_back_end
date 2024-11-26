@@ -173,7 +173,7 @@ class BlackjackGame:
             #   self.player_score += 10
 
             # Correcting the logic to handle aces when the player's score is over 21
-            self.calculate_aces(self.player_hand)
+            self.player_score = self.calculate_aces(self.player_hand)
 
             # Check if player busts after hitting
             if self.player_score > 21:

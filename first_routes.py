@@ -140,9 +140,18 @@ def blackjack():
 
     # Get data from front end query
     data = request.get_json()
-    action = data.get('action')
-    bet_amount = data.get('bet_amount', 0)
-    split = data.get('split', False)
+
+    # Error check front end query inputs
+    try:
+        action = str(data.get('action'))
+        bet_amount = int(data.get('bet_amount', 0))
+        if bet_amount < 0:
+            raise ValueError("No negative bets allowed!")
+        split = data.get('split', False)
+        if not isinstance(split, bool):
+            raise ValueError("Must be True or False")
+    except ValueError as e:
+        return jsonify({"message": str(e)})
 
     # Get the game state from Redis and always initialize a new game class based on the game state
     game_state_json = blackjack_redis_client.get('game_state_key')
@@ -185,7 +194,7 @@ def blackjack():
         # Reach conclusion if player has blackjack
         if game.player_score == 21:
             game.set_action('stay')
-            game.result(game_state['bet'])
+            game.result(game.bet)
             game_state['continue_betting'] = False
         set_game_state(blackjack_redis_client, game)
     elif game_state['continue_betting']:
